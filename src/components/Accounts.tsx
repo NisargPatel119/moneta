@@ -60,7 +60,7 @@ function Connections({ data, onChanged }: { data: DashboardData; onChanged: () =
   if (connections.length === 0) return null;
 
   async function remove(itemId: string, institution: string) {
-    if (!window.confirm(`Disconnect ${institution}? Its accounts will disappear from WealthSync. You can link it again later.`)) return;
+    if (!window.confirm(`Disconnect ${institution}? Its accounts will disappear from Moneta. You can link it again later.`)) return;
     setRemoving(itemId);
     const res = await fetch('/api/plaid/remove-item', {
       method: 'POST',

@@ -1,5 +1,6 @@
 import type { FinancialData } from './plaidData';
-import { categoryMeta, categoryOf, displayName, inRange, monthRange, spendingByCategory, sumIncome, sumSpending, SECURITY_TYPE_LABELS } from './finance';
+import { categoryMeta, displayName, inRange, monthRange, spendingByCategory, sumIncome, sumSpending, SECURITY_TYPE_LABELS } from './finance';
+import { TRANSFER_META, TRANSFER_TYPES, makeTxnRules } from './transfers';
 
 const money = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -27,13 +28,15 @@ export function buildFinancialContext(data: FinancialData) {
     lines.push(`- ${name} (${a.institution}, ${a.type}/${a.subtype ?? '-'}): ${money(a.balances.current ?? 0)}${limit}`);
   }
 
-  lines.push('', '## Monthly cash flow (transfers and card payments excluded from spending)');
+  const rules = makeTxnRules(data.transactions, data.settings.transferRules);
+  const counted = TRANSFER_TYPES.filter(t => data.settings.transferRules[t].countAsSpending).map(t => TRANSFER_META[t].label);
+  lines.push('', `## Monthly cash flow (transfers excluded from spending, except the user's choice to count: ${counted.join(', ') || 'none'})`);
   for (const offset of [0, -1, -2]) {
     const range = monthRange(offset);
     const txns = data.transactions.filter(t => inRange(t, range));
     const label = new Date(range.start + 'T12:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    const cats = spendingByCategory(txns).slice(0, 8).map(c => `${c.label} ${money(c.total)}`).join(', ');
-    lines.push(`- ${label}${offset === 0 ? ' (month to date)' : ''}: spent ${money(sumSpending(txns))}, income ${money(sumIncome(txns))}. By category: ${cats || 'none'}`);
+    const cats = spendingByCategory(txns, rules).slice(0, 8).map(c => `${c.label} ${money(c.total)}`).join(', ');
+    lines.push(`- ${label}${offset === 0 ? ' (month to date)' : ''}: spent ${money(sumSpending(txns, rules))}, income ${money(sumIncome(txns))}. By category: ${cats || 'none'}`);
   }
 
   if (data.holdings.length > 0) {
@@ -64,9 +67,10 @@ export function buildFinancialContext(data: FinancialData) {
     if (combined.size > top.length) lines.push(`- …and ${combined.size - top.length} smaller positions`);
   }
 
-  lines.push('', '## Transactions, most recent first (positive = money out, negative = money in)');
+  lines.push('', '## Transactions, most recent first (positive = money out, negative = money in; [not spending] = excluded from spending totals)');
   for (const t of data.transactions.slice(0, 150)) {
-    lines.push(`${t.date} | ${displayName(t)} | ${t.amount.toFixed(2)} | ${categoryMeta(categoryOf(t)).label}${t.pending ? ' (pending)' : ''} | ${accountNames.get(t.account_id) ?? ''}`);
+    const notSpending = t.amount > 0 && !rules.isSpending(t) ? ' [not spending]' : '';
+    lines.push(`${t.date} | ${displayName(t)} | ${t.amount.toFixed(2)} | ${categoryMeta(rules.groupKey(t)).label}${notSpending}${t.pending ? ' (pending)' : ''} | ${accountNames.get(t.account_id) ?? ''}`);
   }
   if (data.transactions.length > 150) lines.push(`(${data.transactions.length - 150} older transactions omitted)`);
 

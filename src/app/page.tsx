@@ -12,6 +12,8 @@ import { Accounts } from '@/components/Accounts';
 import { Investments } from '@/components/Investments';
 import { Assistant, type ChatMessage } from '@/components/Assistant';
 import { SetupChecklist } from '@/components/SetupChecklist';
+import { TransferSettings } from '@/components/TransferSettings';
+import { DEFAULT_TRANSFER_RULES, makeTxnRules, type TransferRules } from '@/lib/transfers';
 import { Card, PrivacyProvider, Skeleton, TextSizeControl, cn, usePrivacy } from '@/components/ui';
 import { type DashboardData, timeAgo } from '@/lib/finance';
 
@@ -40,6 +42,7 @@ function Dashboard() {
   const [tab, setTab] = useState<Tab>('overview');
   const [category, setCategory] = useState<string | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
+  const [transfersOpen, setTransfersOpen] = useState(false);
   const [, forceTick] = useState(0);
   const { hidden, toggle } = usePrivacy();
 
@@ -76,6 +79,22 @@ function Dashboard() {
     return (id: string) => names.get(id);
   }, [data]);
 
+  const txnRules = useMemo(
+    () => makeTxnRules(data?.transactions ?? [], data?.settings?.transferRules ?? DEFAULT_TRANSFER_RULES),
+    [data]
+  );
+
+  // Optimistic: apply immediately, then save so other devices (and the AI) use the same rules
+  const updateTransferRules = (transferRules: TransferRules) => {
+    setData(d => (d ? { ...d, settings: { ...d.settings, transferRules } } : d));
+    fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transferRules }),
+    }).then(res => { if (!res.ok) throw new Error(); })
+      .catch(() => setError('Could not save your transfer settings. They will reset when you reload.'));
+  };
+
   const goTo = (next: Tab, cat?: string) => {
     setTab(next);
     setCategory(cat ?? null);
@@ -94,7 +113,7 @@ function Dashboard() {
               <LineChart size={22} strokeWidth={2.5} />
             </div>
             <div className="min-w-0">
-              <h1 className="text-lg sm:text-xl font-bold tracking-tight leading-tight">WealthSync</h1>
+              <h1 className="text-lg sm:text-xl font-bold tracking-tight leading-tight">Moneta</h1>
               {data?.fetchedAt && (
                 <p className="text-[11px] text-slate-500 font-medium leading-tight truncate">
                   {refreshing ? 'Refreshing…' : `Updated ${timeAgo(data.fetchedAt)}`}
@@ -196,8 +215,8 @@ function Dashboard() {
 
               <h2 className="text-xl font-bold">{TABS.find(t => t.id === tab)?.label}</h2>
 
-              {tab === 'overview' && <Overview data={data} goTo={goTo} accountName={accountName} />}
-              {tab === 'spending' && <Spending data={data} accountName={accountName} category={category} setCategory={setCategory} />}
+              {tab === 'overview' && <Overview data={data} rules={txnRules} goTo={goTo} accountName={accountName} />}
+              {tab === 'spending' && <Spending data={data} rules={txnRules} accountName={accountName} category={category} setCategory={setCategory} onOpenTransfers={() => setTransfersOpen(true)} />}
               {tab === 'investments' && <Investments data={data} onLinkBrokerage={() => plaid.start('brokerage')} />}
               {tab === 'accounts' && <Accounts data={data} onChanged={load} />}
               {tab === 'assistant' && <Assistant messages={chat} setMessages={setChat} />}
@@ -205,6 +224,16 @@ function Dashboard() {
           </div>
         )}
       </main>
+
+      {data && (
+        <TransferSettings
+          open={transfersOpen}
+          onClose={() => setTransfersOpen(false)}
+          transactions={data.transactions}
+          txnRules={txnRules}
+          onChange={updateTransferRules}
+        />
+      )}
 
       {/* Mobile bottom tab bar */}
       {data?.linked && (

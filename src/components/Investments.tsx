@@ -77,7 +77,7 @@ export function Investments({ data, onLinkBrokerage }: { data: DashboardData; on
         <h3 className="text-lg font-semibold mt-5">No holdings yet</h3>
         <p className="text-slate-500 mt-2 text-sm max-w-sm mx-auto">
           Link a brokerage or retirement account (Fidelity, Vanguard, Schwab, Robinhood…) to see your positions, allocation and gains.
-          If you already linked one, re-link it so WealthSync can read its holdings.
+          If you already linked one, re-link it so Moneta can read its holdings.
         </p>
         <button onClick={onLinkBrokerage} className="mt-6 bg-blue-600 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-blue-700 inline-flex items-center gap-2">
           <Plus size={18} /> Link a brokerage

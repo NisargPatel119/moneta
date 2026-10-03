@@ -2,6 +2,7 @@ import type { AccountBase, Transaction } from 'plaid';
 import { errorMessage, plaidErrorBody } from '@/lib/errors';
 import { ensureSchema, sql } from '@/lib/db';
 import { plaidClient } from '@/lib/plaid';
+import { getSettings, type AppSettings } from '@/lib/settings';
 
 // How far back to pull transactions. 90 days lets the UI compare this month to last month.
 const HISTORY_DAYS = 90;
@@ -33,6 +34,7 @@ export type FinancialData = {
   transactions: Transaction[];
   holdings: HoldingRow[];
   issues: Issue[];
+  settings: AppSettings;
   fetchedAt: string;
 };
 
@@ -48,9 +50,12 @@ export async function getFinancialData({ fresh = false } = {}): Promise<Financia
   if (!fresh && cache && Date.now() - cache.at < CACHE_MS) return cache.data;
 
   await ensureSchema();
-  const items = await sql`SELECT access_token, item_id FROM plaid_items`;
+  const [items, settings] = await Promise.all([
+    sql`SELECT access_token, item_id FROM plaid_items`,
+    getSettings(),
+  ]);
   if (items.length === 0) {
-    return { linked: false, netWorth: 0, assets: 0, liabilities: 0, accounts: [], transactions: [], holdings: [], issues: [], fetchedAt: new Date().toISOString() };
+    return { linked: false, netWorth: 0, assets: 0, liabilities: 0, accounts: [], transactions: [], holdings: [], issues: [], settings, fetchedAt: new Date().toISOString() };
   }
 
   const endDate = new Date();
@@ -109,6 +114,7 @@ export async function getFinancialData({ fresh = false } = {}): Promise<Financia
     transactions,
     holdings,
     issues,
+    settings,
     fetchedAt: new Date().toISOString(),
   };
   cache = { at: Date.now(), data };

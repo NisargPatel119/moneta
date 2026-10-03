@@ -7,21 +7,23 @@ import {
 } from '@/lib/finance';
 import { Card, Money, SectionTitle, cn } from './ui';
 import { TransactionList } from './TransactionList';
+import type { TxnRules } from '@/lib/transfers';
 
 // Validated categorical slots (dataviz palette): blue, aqua, orange
 const MIX_COLORS = { cash: '#2a78d6', investments: '#1baf7a', other: '#eb6834' };
 
-export function Overview({ data, goTo, accountName }: {
+export function Overview({ data, rules, goTo, accountName }: {
   data: DashboardData;
+  rules: TxnRules;
   goTo: (tab: 'spending' | 'accounts' | 'investments', category?: string) => void;
   accountName: (id: string) => string | undefined;
 }) {
   const stats = useMemo(() => {
     const thisMonth = data.transactions.filter(t => inRange(t, monthRange(0)));
-    const spent = sumSpending(thisMonth);
-    const lastPace = lastMonthSameDaySpending(data.transactions);
+    const spent = sumSpending(thisMonth, rules);
+    const lastPace = lastMonthSameDaySpending(data.transactions, rules);
     const income = sumIncome(thisMonth);
-    const categories = spendingByCategory(thisMonth).slice(0, 5);
+    const categories = spendingByCategory(thisMonth, rules).slice(0, 5);
 
     const mix = { cash: 0, investments: 0, other: 0 };
     for (const a of data.accounts) {
@@ -42,7 +44,7 @@ export function Overview({ data, goTo, accountName }: {
     const topHoldings = [...positions.values()].sort((a, b) => b.value - a.value).slice(0, 5);
 
     return { spent, lastPace, income, categories, mix, topHoldings, holdingsTotal };
-  }, [data]);
+  }, [data, rules]);
 
   const paceDiff = stats.spent - stats.lastPace;
   const monthName = new Date().toLocaleDateString('en-US', { month: 'long' });
@@ -191,7 +193,7 @@ export function Overview({ data, goTo, accountName }: {
             </button>
           }>Recent activity</SectionTitle>
         </div>
-        <TransactionList transactions={data.transactions.slice(0, 6)} accountName={accountName} />
+        <TransactionList transactions={data.transactions.filter(t => !rules.isHidden(t)).slice(0, 6)} rules={rules} accountName={accountName} />
       </Card>
     </div>
   );

@@ -90,8 +90,8 @@ export function Skeleton({ className }: { className?: string }) {
 
 // ---------- Transaction avatar: merchant logo, falling back to a category icon ----------
 
-export function TransactionIcon({ t }: { t: Transaction }) {
-  const meta = categoryMeta(categoryOf(t));
+export function TransactionIcon({ t, categoryKey }: { t: Transaction; categoryKey?: string }) {
+  const meta = categoryMeta(categoryKey ?? categoryOf(t));
   const Icon = meta.icon;
   if (t.logo_url) {
     // eslint-disable-next-line @next/next/no-img-element

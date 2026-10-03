@@ -13,10 +13,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "WealthSync",
+  title: "Moneta",
   description: "Personal finance dashboard",
   // Lets you "Add to Home Screen" on iPhone and open it like an app
-  appleWebApp: { capable: true, title: "WealthSync", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "Moneta", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

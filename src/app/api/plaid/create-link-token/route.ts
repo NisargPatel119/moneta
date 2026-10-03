@@ -22,7 +22,7 @@ export async function POST(request: Request) {
         // Since this is a personal app for just you, we can hardcode a user ID
         client_user_id: 'personal-user-id',
       },
-      client_name: 'WealthSync',
+      client_name: 'Moneta',
       ...CONFIG[kind],
       country_codes: [CountryCode.Us],
       language: 'en',

@@ -13,7 +13,7 @@ export default function LoginPage() {
           <div className="bg-blue-600 text-white p-2 rounded-xl shadow-inner shadow-blue-700/50">
             <LineChart size={24} strokeWidth={2.5} />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">WealthSync</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Moneta</h1>
         </div>
 
         <form action={action} className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-5">

@@ -1,10 +1,26 @@
-# WealthSync
+# Moneta
 
 **Your own private personal finance dashboard: free, open source, and self-hosted.**
 
-WealthSync is a free alternative to subscription apps like Monarch Money, Copilot, and Origin (and a replacement for the now-shut-down Mint). Connect your bank, credit card, brokerage, and retirement accounts and get your net worth, spending insights, investment holdings, and an AI assistant you can ask about your money.
+Moneta is a free alternative to subscription apps like Monarch Money, Copilot, and Origin (and a replacement for the now-shut-down Mint). Connect your bank, credit card, brokerage, and retirement accounts and get your net worth, spending insights, investment holdings, and an AI assistant you can ask about your money.
 
 The difference: **it runs on your own free accounts, with your own keys.** Your financial data lives in your own database, behind your own password. There's no company in the middle, no subscription, and no ads.
+
+---
+
+## Why "Moneta"?
+
+On the Capitoline Hill in ancient Rome stood a temple to **Juno Moneta**, dedicated in 344 BC. By the 3rd century BC the city's mint was working in or beside it, so the coins of Rome were struck in Moneta's house. Over time her name came to mean the mint itself, and then the coins it made.
+
+Her name lives on in everyday English:
+
+- **money:** Latin *moneta* → Old French *moneie* → English *money*
+- **mint:** Latin *moneta* → Old English *mynet* → *mint*
+- **monetary**, and coin words in other languages, like the German *Münze*
+
+The Romans usually explained the name with the verb ***monere***, "to warn, to remind, to advise." Moneta was the goddess who warned. Cicero tells of a voice from her temple giving the city advice during an earthquake, and later writers connected her with the sacred geese of Juno, whose honking warned the Romans of a night attack on the Capitol. One poet went further still: in the first Latin translation of the *Odyssey*, Livius Andronicus rendered *Mnemosyne*, the goddess of memory and mother of the Muses, as *Moneta*.
+
+So Moneta is money, memory, and good advice in one name. That's what this app tries to be: a quiet presence that keeps track of your money, reminds you where it went, and answers when you ask. And since it's a free replacement for Mint, it's fitting that the word *mint* itself comes from *Moneta*.
 
 ---
 
@@ -81,7 +97,7 @@ A setup checklist on the first screen shows anything that's still missing. In sa
 
 ### 7. Cancel your old subscription 🎉
 
-Before you do, note what WealthSync doesn't have yet (see [Limitations](#limitations)), and export anything you want to keep from your old app.
+Before you do, note what Moneta doesn't have yet (see [Limitations](#limitations)), and export anything you want to keep from your old app.
 
 ### Phone + big banks
 
@@ -95,8 +111,8 @@ Some large banks (Chase, Capital One, Wells Fargo…) send you to their own webs
 ## Run it locally
 
 ```bash
-git clone https://github.com/<you>/wealth-sync.git
-cd wealth-sync
+git clone https://github.com/<you>/moneta.git
+cd moneta
 npm install
 cp .env.example .env.local   # then fill in the values
 npm run dev
@@ -106,14 +122,14 @@ Open [http://localhost:3000](http://localhost:3000) and sign in with your `APP_P
 
 ## Security & privacy
 
-- **One user, one password.** WealthSync is designed for a single person (or household) per deployment. Every page and API route requires signing in. Sessions are signed, HTTP-only cookies that last 30 days, and changing `APP_PASSWORD` signs out every device.
+- **One user, one password.** Moneta is designed for a single person (or household) per deployment. Every page and API route requires signing in. Sessions are signed, HTTP-only cookies that last 30 days, and changing `APP_PASSWORD` signs out every device.
 - **Your data stays in your accounts.** Plaid access tokens are stored in *your* Neon database. Transactions and balances are fetched from Plaid on demand and aren't copied anywhere else. Keep `DATABASE_URL` and your Plaid secret private.
 - **AI is opt-in.** If you set `GROQ_API_KEY`, each question sends a summary of your accounts, holdings, and recent transactions to Groq to generate the answer. Turn on Zero Data Retention in Groq, or leave the key unset to disable AI entirely.
 - **Disconnect anytime.** *Accounts → Connections → Disconnect* revokes the connection at Plaid and deletes its token from your database.
 
 ## Limitations
 
-WealthSync is young. Compared with paid apps, it currently doesn't have:
+Moneta is young. Compared with paid apps, it currently doesn't have:
 
 - Budgets, savings goals, or bill reminders
 - Editing or recategorizing transactions, or custom rules
@@ -161,4 +177,4 @@ Issues and pull requests are welcome, especially for anything in [Limitations](#
 
 ## Disclaimer
 
-WealthSync is provided as-is, without warranty. It isn't financial advice, and the AI assistant can make mistakes. Not affiliated with Plaid, Groq, Vercel, Neon, or any of the apps mentioned above.
+Moneta is provided as-is, without warranty. It isn't financial advice, and the AI assistant can make mistakes. Not affiliated with Plaid, Groq, Vercel, Neon, or any of the apps mentioned above.

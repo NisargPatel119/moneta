@@ -1,17 +1,19 @@
 'use client';
 import type { Transaction } from 'plaid';
 import { categoryMeta, categoryOf, displayName, friendlyDay } from '@/lib/finance';
+import type { TxnRules } from '@/lib/transfers';
 import { Money, TransactionIcon, cn } from './ui';
 
-export function TransactionRow({ t, accountName }: { t: Transaction; accountName?: string }) {
+export function TransactionRow({ t, accountName, rules }: { t: Transaction; accountName?: string; rules?: TxnRules }) {
   const inflow = t.amount < 0;
+  const key = rules ? rules.groupKey(t) : categoryOf(t);
   return (
     <li className="flex items-center gap-3 px-4 sm:px-5 py-3 hover:bg-slate-50 transition-colors">
-      <TransactionIcon t={t} />
+      <TransactionIcon t={t} categoryKey={key} />
       <div className="min-w-0 flex-1">
         <p className="font-semibold text-slate-900 truncate">{displayName(t)}</p>
         <p className="text-xs text-slate-500 font-medium truncate mt-0.5">
-          {categoryMeta(categoryOf(t)).label}
+          {categoryMeta(key).label}
           {accountName && <> · {accountName}</>}
         </p>
       </div>
@@ -25,8 +27,9 @@ export function TransactionRow({ t, accountName }: { t: Transaction; accountName
 }
 
 // Groups transactions under day headers ("Today", "Yesterday", "Mon, Sep 29")
-export function TransactionList({ transactions, accountName, emptyText = 'No transactions found.' }: {
+export function TransactionList({ transactions, accountName, rules, emptyText = 'No transactions found.' }: {
   transactions: Transaction[];
+  rules?: TxnRules;
   accountName?: (accountId: string) => string | undefined;
   emptyText?: string;
 }) {
@@ -50,7 +53,7 @@ export function TransactionList({ transactions, accountName, emptyText = 'No tra
           </h4>
           <ul className="divide-y divide-slate-100">
             {g.items.map(t => (
-              <TransactionRow key={t.transaction_id} t={t} accountName={accountName?.(t.account_id)} />
+              <TransactionRow key={t.transaction_id} t={t} rules={rules} accountName={accountName?.(t.account_id)} />
             ))}
           </ul>
         </section>

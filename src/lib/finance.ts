@@ -1,5 +1,6 @@
 import type { AccountBase, Transaction } from 'plaid';
 import type { HoldingRow } from './plaidData';
+import { TRANSFER_META, type TransferRules, type TransferType, type TxnRules } from './transfers';
 import {
   ArrowLeftRight, Banknote, Briefcase, Car, Coffee, Film, HeartPulse, Home, Hammer,
   Landmark, Plane, ReceiptText, Scissors, ShoppingBag, Wrench, CircleDollarSign,
@@ -19,6 +20,7 @@ export type DashboardData = {
   transactions: Transaction[];
   holdings: HoldingRow[];
   issues: DashboardIssue[];
+  settings: { transferRules: TransferRules };
   fetchedAt?: string;
 };
 
@@ -102,18 +104,17 @@ export function categoryOf(t: Transaction) {
   return t.personal_finance_category?.primary ?? 'OTHER';
 }
 
+// Accepts a Plaid category or a transfer group key ("xfer:<type>", see transfers.ts)
 export function categoryMeta(key: string): CategoryMeta {
+  if (key.startsWith('xfer:')) {
+    const meta = TRANSFER_META[key.slice(5) as TransferType];
+    if (meta) return meta;
+  }
   return CATEGORIES[key] ?? FALLBACK;
 }
 
-// Money moving between your own accounts (transfers, paying off a card) isn't real spending or income
-const NOT_SPENDING = new Set(['TRANSFER_IN', 'TRANSFER_OUT', 'LOAN_PAYMENTS', 'INCOME']);
-
-// Plaid convention: positive amount = money leaving the account
-export function isSpending(t: Transaction) {
-  return t.amount > 0 && !NOT_SPENDING.has(categoryOf(t));
-}
-
+// Plaid convention: positive amount = money leaving the account.
+// Whether money out counts as spending depends on the user's transfer rules (see transfers.ts).
 export function isIncome(t: Transaction) {
   return t.amount < 0 && categoryOf(t) === 'INCOME';
 }
@@ -167,19 +168,19 @@ export function inRange(t: Transaction, range: { start: string; end: string }) {
   return t.date >= range.start && t.date <= range.end;
 }
 
-export function sumSpending(txns: Transaction[]) {
-  return txns.reduce((sum, t) => (isSpending(t) ? sum + t.amount : sum), 0);
+export function sumSpending(txns: Transaction[], rules: TxnRules) {
+  return txns.reduce((sum, t) => (rules.isSpending(t) ? sum + t.amount : sum), 0);
 }
 
 export function sumIncome(txns: Transaction[]) {
   return txns.reduce((sum, t) => (isIncome(t) ? sum - t.amount : sum), 0);
 }
 
-export function spendingByCategory(txns: Transaction[]) {
+export function spendingByCategory(txns: Transaction[], rules: TxnRules) {
   const totals = new Map<string, number>();
   for (const t of txns) {
-    if (!isSpending(t)) continue;
-    const key = categoryOf(t);
+    if (!rules.isSpending(t)) continue;
+    const key = rules.groupKey(t);
     totals.set(key, (totals.get(key) ?? 0) + t.amount);
   }
   return [...totals.entries()]
@@ -188,11 +189,11 @@ export function spendingByCategory(txns: Transaction[]) {
 }
 
 // Spending through the same day-of-month last month, for a fair "pace" comparison
-export function lastMonthSameDaySpending(txns: Transaction[]) {
+export function lastMonthSameDaySpending(txns: Transaction[], rules: TxnRules) {
   const today = new Date();
   const last = monthRange(-1);
   const lastMonthEnd = parseDay(last.end);
   const cutoffDay = Math.min(today.getDate(), lastMonthEnd.getDate());
   const cutoff = dayKey(new Date(lastMonthEnd.getFullYear(), lastMonthEnd.getMonth(), cutoffDay));
-  return sumSpending(txns.filter(t => t.date >= last.start && t.date <= cutoff));
+  return sumSpending(txns.filter(t => t.date >= last.start && t.date <= cutoff), rules);
 }

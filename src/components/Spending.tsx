@@ -1,12 +1,13 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { Search, X } from 'lucide-react';
+import { ArrowLeftRight, Search, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
-  ACCOUNT_TYPE_LABELS, ACCOUNT_TYPE_ORDER, type DashboardData, categoryMeta, categoryOf, dayKey,
+  ACCOUNT_TYPE_LABELS, ACCOUNT_TYPE_ORDER, type DashboardData, categoryMeta, dayKey,
   displayName, formatCompact, formatMoney, inRange, monthRange, parseDay, spendingByCategory,
-  sumIncome, sumSpending, isSpending,
+  sumIncome, sumSpending,
 } from '@/lib/finance';
+import type { TxnRules } from '@/lib/transfers';
 import { Card, Money, SectionTitle, cn, usePrivacy } from './ui';
 import { TransactionList } from './TransactionList';
 
@@ -29,15 +30,18 @@ function periodRange(p: Period) {
   return { start: dayKey(start), end: dayKey(new Date()) };
 }
 
-export function Spending({ data, accountName, category, setCategory }: {
+export function Spending({ data, rules, accountName, category, setCategory, onOpenTransfers }: {
   data: DashboardData;
+  rules: TxnRules;
   accountName: (id: string) => string | undefined;
   category: string | null;
   setCategory: (c: string | null) => void;
+  onOpenTransfers: () => void;
 }) {
   const [period, setPeriod] = useState<Period>('this');
   const [accountId, setAccountId] = useState('all');
   const [query, setQuery] = useState('');
+  const [showHidden, setShowHidden] = useState(false);
   const { hidden } = usePrivacy();
 
   const range = periodRange(period);
@@ -47,17 +51,23 @@ export function Spending({ data, accountName, category, setCategory }: {
     inRange(t, range) && (accountId === 'all' || t.account_id === accountId)
   ), [data, range.start, range.end, accountId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const spent = sumSpending(periodTxns);
+  const spent = sumSpending(periodTxns, rules);
   const income = sumIncome(periodTxns);
-  const categories = spendingByCategory(periodTxns);
+  const categories = spendingByCategory(periodTxns, rules);
 
-  const visibleTxns = useMemo(() => {
+  const { visibleTxns, hiddenCount } = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return periodTxns.filter(t =>
-      (!category || categoryOf(t) === category) &&
+    const matching = periodTxns.filter(t =>
+      // Picking a category shows its transactions even if that transfer type is hidden
+      (!category || rules.groupKey(t) === category) &&
       (!q || displayName(t).toLowerCase().includes(q) || t.name.toLowerCase().includes(q))
     );
-  }, [periodTxns, category, query]);
+    const hiddenTxns = category ? [] : matching.filter(t => rules.isHidden(t));
+    return {
+      visibleTxns: showHidden || category ? matching : matching.filter(t => !rules.isHidden(t)),
+      hiddenCount: hiddenTxns.length,
+    };
+  }, [periodTxns, category, query, rules, showHidden]);
 
   // "This month" chart: cumulative spend by day-of-month vs last month
   const paceData = useMemo(() => {
@@ -65,7 +75,7 @@ export function Spending({ data, accountName, category, setCategory }: {
     const accountTxns = data.transactions.filter(t => accountId === 'all' || t.account_id === accountId);
     const cumulative = (r: { start: string; end: string }, upTo: number) => {
       const daily = new Array(32).fill(0);
-      for (const t of accountTxns) if (inRange(t, r) && isSpending(t)) daily[parseDay(t.date).getDate()] += t.amount;
+      for (const t of accountTxns) if (inRange(t, r) && rules.isSpending(t)) daily[parseDay(t.date).getDate()] += t.amount;
       const out: (number | null)[] = [];
       let running = 0;
       for (let d = 1; d <= 31; d++) { running += daily[d]; out.push(d <= upTo ? running : null); }
@@ -78,20 +88,20 @@ export function Spending({ data, accountName, category, setCategory }: {
     const thisM = cumulative(monthRange(0), today);
     const lastM = cumulative(lastRange, daysLast);
     return Array.from({ length: daysThis }, (_, i) => ({ day: i + 1, thisMonth: thisM[i], lastMonth: lastM[i] }));
-  }, [data, period, accountId]);
+  }, [data, period, accountId, rules]);
 
   // Other periods: daily spending bars
   const dailyData = useMemo(() => {
     if (period === 'this') return [];
     const totals = new Map<string, number>();
-    for (const t of periodTxns) if (isSpending(t)) totals.set(t.date, (totals.get(t.date) ?? 0) + t.amount);
+    for (const t of periodTxns) if (rules.isSpending(t)) totals.set(t.date, (totals.get(t.date) ?? 0) + t.amount);
     const out = [];
     for (let d = parseDay(range.start); dayKey(d) <= range.end; d.setDate(d.getDate() + 1)) {
       const key = dayKey(d);
       out.push({ label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), spend: totals.get(key) ?? 0 });
     }
     return out;
-  }, [periodTxns, period, range.start, range.end]);
+  }, [periodTxns, period, range.start, range.end, rules]);
 
   const groupedAccounts = ACCOUNT_TYPE_ORDER
     .map(type => ({ type, accounts: data.accounts.filter(a => (a.type ?? 'other') === type) }))
@@ -118,10 +128,11 @@ export function Spending({ data, accountName, category, setCategory }: {
             </button>
           ))}
         </div>
+        <div className="flex gap-2 min-w-0">
         <select
           value={accountId}
           onChange={e => setAccountId(e.target.value)}
-          className="w-full sm:w-auto sm:max-w-xs truncate bg-white border border-slate-300 text-slate-900 text-sm rounded-xl p-2.5 font-medium shadow-sm outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-1 min-w-0 sm:flex-none sm:max-w-xs truncate bg-white border border-slate-300 text-slate-900 text-sm rounded-xl p-2.5 font-medium shadow-sm outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="all">All accounts</option>
           {groupedAccounts.map(g => (
@@ -132,6 +143,13 @@ export function Spending({ data, accountName, category, setCategory }: {
             </optgroup>
           ))}
         </select>
+        <button
+          onClick={onOpenTransfers}
+          className="shrink-0 flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 text-sm rounded-xl px-3 font-semibold shadow-sm hover:bg-slate-50"
+        >
+          <ArrowLeftRight size={16} /> Transfers
+        </button>
+        </div>
       </div>
 
       {period === 'this' && periodTxns.length === 0 && (
@@ -232,7 +250,8 @@ export function Spending({ data, accountName, category, setCategory }: {
               );
             })}
           </ul>
-          <p className="text-xs text-slate-400 mt-3">Tap a category to filter transactions. Transfers and card payments aren&apos;t counted as spending.</p>
+          <p className="text-xs text-slate-400 mt-3">Tap a category to filter transactions. Transfers aren&apos;t counted as spending unless you turn that on in{' '}
+            <button onClick={onOpenTransfers} className="underline font-semibold">Transfers</button>.</p>
         </Card>
       )}
 
@@ -253,6 +272,16 @@ export function Spending({ data, accountName, category, setCategory }: {
             <p className="text-sm text-slate-500 font-medium">
               {visibleTxns.length} transaction{visibleTxns.length === 1 ? '' : 's'}
             </p>
+            {hiddenCount > 0 && !showHidden && (
+              <button onClick={() => setShowHidden(true)} className="text-xs font-semibold text-slate-500 hover:text-slate-900">
+                {hiddenCount} hidden transfer{hiddenCount === 1 ? '' : 's'} · Show
+              </button>
+            )}
+            {showHidden && !category && (
+              <button onClick={() => setShowHidden(false)} className="text-xs font-semibold text-slate-500 hover:text-slate-900">
+                Hide transfers
+              </button>
+            )}
             {category && (
               <button
                 onClick={() => setCategory(null)}
@@ -266,6 +295,7 @@ export function Spending({ data, accountName, category, setCategory }: {
         <div className="max-h-[70vh] overflow-y-auto">
           <TransactionList
             transactions={visibleTxns}
+            rules={rules}
             accountName={accountId === 'all' ? accountName : undefined}
             emptyText={query || category ? 'No transactions match your filters.' : 'No transactions in this period.'}
           />
