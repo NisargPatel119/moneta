@@ -22,7 +22,7 @@ export default function LinkBank() {
     createToken();
   }, []);
 
-  const onSuccess = useCallback(async (public_token: string, metadata: any) => {
+  const onSuccess = useCallback(async (public_token: any, metadata: any) => {
     // Send the public_token to our backend to exchange and save it to the database
     const response = await fetch('/api/plaid/exchange-public-token', {
       method: 'POST',

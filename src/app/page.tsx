@@ -252,7 +252,7 @@ export default function Home() {
                             tickLine={false}
                           />
                           <Tooltip 
-                            formatter={(value: number) => [value.toLocaleString('en-US', { style: 'currency', currency: 'USD' }), 'Spend']}
+                            formatter={(value: any) => [Number(value).toLocaleString('en-US', { style: 'currency', currency: 'USD' }), 'Spend']}
                             labelStyle={{ color: '#0f172a', fontWeight: 'bold' }}
                             contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' }}
                           />
