@@ -74,85 +74,85 @@ export function TransactionEditor({ txn, rule, accountName, onClose, onSave, onD
 
   return (
     <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="txn-editor-title">
-      <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
-      <div className="relative bg-white w-full sm:max-w-md max-h-[90dvh] overflow-y-auto rounded-t-3xl sm:rounded-3xl shadow-xl pb-[env(safe-area-inset-bottom)]">
-        <div className="flex items-start gap-3 p-5 border-b border-slate-100">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-surface w-full sm:max-w-md max-h-[90dvh] overflow-y-auto rounded-t-2xl sm:rounded-2xl shadow-xl pb-[env(safe-area-inset-bottom)]">
+        <div className="flex items-start gap-3 p-5 border-b border-line">
           <TransactionIcon t={txn} categoryKey={category} />
           <div className="flex-1 min-w-0">
-            <h2 id="txn-editor-title" className="font-bold text-slate-900 truncate">{name.trim() || bankName}</h2>
-            <p className="text-xs text-slate-500 mt-0.5 truncate">
+            <h2 id="txn-editor-title" className="font-bold text-ink truncate">{name.trim() || bankName}</h2>
+            <p className="text-xs text-muted mt-0.5 truncate">
               {friendlyDay(txn.date)}{accountName && <> · {accountName}</>}{txn.pending && ' · Pending'}
             </p>
           </div>
           <div className="text-right shrink-0">
-            <Money value={-txn.amount} signed className={cn('font-bold', txn.amount < 0 ? 'text-green-600' : 'text-slate-900')} />
+            <Money value={-txn.amount} signed className={cn('font-bold', txn.amount < 0 ? 'text-positive' : 'text-ink')} />
           </div>
-          <button onClick={onClose} aria-label="Close" className="p-2 -m-2 ml-1 rounded-xl text-slate-500 hover:bg-slate-100"><X size={20} /></button>
+          <button onClick={onClose} aria-label="Close" className="p-2 -m-2 ml-1 rounded-xl text-muted hover:bg-sunken"><X size={20} /></button>
         </div>
 
         <div className="p-5 space-y-4">
           <label className="block">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Name</span>
+            <span className="eyebrow text-muted">Name</span>
             <input
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder={bankName}
               maxLength={120}
-              className="mt-1.5 w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+              className="mt-1.5 w-full bg-sunken border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent focus:bg-surface"
             />
-            <span className="text-[11px] text-slate-400 mt-1 block">From your bank: {txn.name}</span>
+            <span className="text-[11px] text-faint mt-1 block">From your bank: {txn.name}</span>
           </label>
 
           <label className="block">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Category</span>
+            <span className="eyebrow text-muted">Category</span>
             <select
               value={category}
               onChange={e => setCategory(e.target.value)}
-              className="mt-1.5 w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500"
+              className="mt-1.5 w-full bg-sunken border border-line rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 focus:ring-accent"
             >
               {EDITABLE_CATEGORIES.map(key => (
                 <option key={key} value={key}>{CATEGORIES[key].label}</option>
               ))}
             </select>
             {plaidCategory && category !== plaidCategory && (
-              <span className="text-[11px] text-slate-400 mt-1 block">Automatic: {categoryMeta(plaidCategory).label}</span>
+              <span className="text-[11px] text-faint mt-1 block">Automatic: {categoryMeta(plaidCategory).label}</span>
             )}
           </label>
 
           <label className="block">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Note</span>
+            <span className="eyebrow text-muted">Note</span>
             <textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
               rows={2}
               maxLength={1000}
               placeholder="Add a note…"
-              className="mt-1.5 w-full resize-none bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+              className="mt-1.5 w-full resize-none bg-sunken border border-line rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent focus:bg-surface"
             />
           </label>
 
           {(changedCategory || changedName) && (
-            <label className="flex items-start gap-3 rounded-2xl bg-blue-50 p-3 cursor-pointer">
+            <label className="flex items-start gap-3 rounded-2xl bg-accent-soft p-3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={applyToMerchant}
                 onChange={e => setApplyToMerchant(e.target.checked)}
-                className="mt-0.5 w-4 h-4 accent-blue-600"
+                className="mt-0.5 w-4 h-4 accent-[var(--accent)]"
               />
-              <span className="text-sm text-blue-900">
+              <span className="text-sm text-accent">
                 <span className="font-semibold">Always do this for “{merchant}”</span>
-                <span className="block text-xs text-blue-800/80 mt-0.5">Applies to past and future transactions from this merchant.</span>
+                <span className="block text-xs text-accent/80 mt-0.5">Applies to past and future transactions from this merchant.</span>
               </span>
             </label>
           )}
 
           {rule && (
-            <div className="flex items-center justify-between gap-3 text-xs text-slate-500 bg-slate-50 rounded-xl p-3">
+            <div className="flex items-center justify-between gap-3 text-xs text-muted bg-sunken rounded-xl p-3">
               <span>A rule for “{rule.merchant_key}” is setting this transaction.</span>
               <button
                 onClick={async () => { setSaving(true); try { await onDeleteRule(rule); onClose(); } finally { setSaving(false); } }}
                 disabled={saving}
-                className="shrink-0 font-semibold text-red-600 hover:underline"
+                className="shrink-0 font-semibold text-negative hover:underline"
               >
                 Remove rule
               </button>
@@ -165,7 +165,7 @@ export function TransactionEditor({ txn, rule, accountName, onClose, onSave, onD
             <button
               onClick={() => save({ category: null, name: null })}
               disabled={saving}
-              className="flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-900"
+              className="flex items-center gap-1.5 text-sm font-semibold text-muted hover:text-ink"
             >
               <RotateCcw size={15} /> Reset to automatic
             </button>
@@ -173,7 +173,7 @@ export function TransactionEditor({ txn, rule, accountName, onClose, onSave, onD
           <button
             onClick={() => save(buildEdit())}
             disabled={!dirty || saving}
-            className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-semibold text-sm hover:bg-blue-700 disabled:opacity-40"
+            className="bg-accent text-on-accent px-5 py-2.5 rounded-xl font-semibold text-sm hover:bg-accent-strong disabled:opacity-40"
           >
             {saving ? 'Saving…' : 'Save'}
           </button>

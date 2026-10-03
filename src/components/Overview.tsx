@@ -5,14 +5,14 @@ import {
   type DashboardData, type Txn, dayKey, friendlyDay, isLiability, lastMonthSameDaySpending, monthRange, inRange,
   spendingByCategory, sumIncome, sumSpending,
 } from '@/lib/finance';
-import { Card, Money, SectionTitle, cn } from './ui';
+import { Card, Money, SectionTitle, cn, tint } from './ui';
 import { TransactionList } from './TransactionList';
 import type { TxnRules } from '@/lib/transfers';
 import { projectOccurrences, type RecurringItem } from '@/lib/recurring';
 import { NetWorthChart } from './NetWorthChart';
 
 // Validated categorical slots (dataviz palette): blue, aqua, orange
-const MIX_COLORS = { cash: '#2a78d6', investments: '#1baf7a', other: '#eb6834' };
+const MIX_COLORS = { cash: 'var(--series-1)', investments: 'var(--series-3)', other: 'var(--series-2)' };
 
 export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSelect, accountName }: {
   recurring: RecurringItem[];
@@ -61,22 +61,22 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
     <div className="space-y-5">
       {/* Net worth hero */}
       <Card className="p-6 sm:p-8">
-        <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">Net worth</p>
-        <Money value={data.netWorth} className="block text-4xl sm:text-5xl font-black tracking-tight text-slate-900 mt-2" />
+        <p className="text-muted eyebrow">Net worth</p>
+        <Money value={data.netWorth} className="block font-display text-5xl sm:text-6xl tracking-tight text-ink mt-2 leading-none" />
         <NetWorthChart history={data.history ?? []} current={data.netWorth} />
 
         <div className="grid grid-cols-2 gap-3 mt-6">
-          <button onClick={() => goTo('accounts')} className="text-left rounded-2xl bg-slate-50 p-4 hover:bg-slate-100 transition-colors">
-            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500">
-              <ArrowUpRight size={14} className="text-green-600" /> Assets
+          <button onClick={() => goTo('accounts')} className="text-left rounded-2xl bg-sunken p-4 hover:bg-sunken transition-colors">
+            <div className="flex items-center gap-1.5 eyebrow text-muted">
+              <ArrowUpRight size={14} className="text-positive" /> Assets
             </div>
-            <Money value={data.assets} whole className="block text-xl sm:text-2xl font-bold text-slate-900 mt-1" />
+            <Money value={data.assets} whole className="block text-3xl sm:text-4xl font-display font-normal tracking-tight leading-none text-ink mt-2" />
           </button>
-          <button onClick={() => goTo('accounts')} className="text-left rounded-2xl bg-slate-50 p-4 hover:bg-slate-100 transition-colors">
-            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500">
-              <ArrowDownRight size={14} className="text-red-600" /> Liabilities
+          <button onClick={() => goTo('accounts')} className="text-left rounded-2xl bg-sunken p-4 hover:bg-sunken transition-colors">
+            <div className="flex items-center gap-1.5 eyebrow text-muted">
+              <ArrowDownRight size={14} className="text-negative" /> Liabilities
             </div>
-            <Money value={data.liabilities} whole className="block text-xl sm:text-2xl font-bold text-slate-900 mt-1" />
+            <Money value={data.liabilities} whole className="block text-3xl sm:text-4xl font-display font-normal tracking-tight leading-none text-ink mt-2" />
           </button>
         </div>
 
@@ -92,9 +92,9 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
               {mixEntries.map(([k, label]) => (
                 <div key={k} className="flex items-center gap-2 text-sm">
                   <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: MIX_COLORS[k] }} />
-                  <span className="text-slate-600 font-medium">{label}</span>
-                  <Money value={stats.mix[k]} whole className="text-slate-900 font-semibold" />
-                  <span className="text-slate-400 text-xs">{Math.round((stats.mix[k] / data.assets) * 100)}%</span>
+                  <span className="text-muted font-medium">{label}</span>
+                  <Money value={stats.mix[k]} whole className="text-ink font-semibold" />
+                  <span className="text-faint text-xs">{Math.round((stats.mix[k] / data.assets) * 100)}%</span>
                 </div>
               ))}
             </div>
@@ -107,17 +107,17 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
       {stats.topHoldings.length > 0 && (
         <Card className="p-6">
           <SectionTitle action={
-            <button onClick={() => goTo('investments')} className="text-sm font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-0.5 normal-case tracking-normal">
+            <button onClick={() => goTo('investments')} className="text-sm font-semibold text-accent hover:text-accent flex items-center gap-0.5 normal-case tracking-normal">
               All holdings <ChevronRight size={16} />
             </button>
           }>Top holdings</SectionTitle>
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-line">
             {stats.topHoldings.map(h => (
               <li key={h.label} className="flex items-center justify-between gap-3 py-2.5">
-                <span className="font-semibold text-slate-900 truncate">{h.label}</span>
+                <span className="font-semibold text-ink truncate">{h.label}</span>
                 <span className="flex items-baseline gap-2 shrink-0">
-                  <Money value={h.value} whole className="font-semibold text-slate-900" />
-                  <span className="text-xs text-slate-400 w-10 text-right">{((h.value / stats.holdingsTotal) * 100).toFixed(0)}%</span>
+                  <Money value={h.value} whole className="font-semibold text-ink" />
+                  <span className="text-xs text-faint w-10 text-right">{((h.value / stats.holdingsTotal) * 100).toFixed(0)}%</span>
                 </span>
               </li>
             ))}
@@ -131,18 +131,18 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
           <SectionTitle>{monthName} so far</SectionTitle>
           <div className="flex items-end justify-between gap-4">
             <div>
-              <p className="text-sm text-slate-500 font-medium">Spent</p>
-              <Money value={stats.spent} className="block text-3xl font-bold text-slate-900" />
+              <p className="text-sm text-muted font-medium">Spent</p>
+              <Money value={stats.spent} className="block text-4xl font-display font-normal tracking-tight text-ink" />
             </div>
             <div className="text-right">
-              <p className="text-sm text-slate-500 font-medium">Income</p>
-              <Money value={stats.income} className="block text-xl font-bold text-green-600" />
+              <p className="text-sm text-muted font-medium">Income</p>
+              <Money value={stats.income} className="block text-3xl font-display font-normal tracking-tight leading-none text-positive" />
             </div>
           </div>
           {stats.lastPace > 0 && (
             <div className={cn(
               'mt-5 flex items-start gap-2 rounded-2xl p-3 text-sm font-medium',
-              paceDiff > 0 ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-800'
+              paceDiff > 0 ? 'bg-warn-soft text-warn' : 'bg-positive-soft text-positive'
             )}>
               {paceDiff > 0 ? <TrendingUp size={18} className="shrink-0" /> : <TrendingDown size={18} className="shrink-0" />}
               <span>
@@ -151,7 +151,7 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
               </span>
             </div>
           )}
-          <button onClick={() => goTo('spending')} className="mt-4 text-sm font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1">
+          <button onClick={() => goTo('spending')} className="mt-4 text-sm font-semibold text-accent hover:text-accent flex items-center gap-1">
             View spending <ChevronRight size={16} />
           </button>
         </Card>
@@ -160,7 +160,7 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
         <Card className="p-6">
           <SectionTitle>Top categories this month</SectionTitle>
           {stats.categories.length === 0 ? (
-            <p className="text-slate-500 text-sm py-6 text-center">No spending yet this month.</p>
+            <p className="text-muted text-sm py-6 text-center">No spending yet this month.</p>
           ) : (
             <ul className="space-y-1">
               {stats.categories.map(c => {
@@ -169,18 +169,18 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
                   <li key={c.key}>
                     <button
                       onClick={() => goTo('spending', c.key)}
-                      className="w-full flex items-center gap-3 rounded-xl p-2 -mx-2 hover:bg-slate-50 transition-colors text-left"
+                      className="w-full flex items-center gap-3 rounded-xl p-2 -mx-2 hover:bg-sunken transition-colors text-left"
                     >
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${c.color}1a`, color: c.color }}>
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: tint(c.color), color: c.color }}>
                         <Icon size={16} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between text-sm">
-                          <span className="font-semibold text-slate-800 truncate">{c.label}</span>
-                          <Money value={c.total} whole className="font-semibold text-slate-900" />
+                          <span className="font-semibold text-ink truncate">{c.label}</span>
+                          <Money value={c.total} whole className="font-semibold text-ink" />
                         </div>
-                        <div className="h-1.5 bg-slate-100 rounded-full mt-1.5 overflow-hidden">
-                          <div className="h-full bg-blue-600 rounded-full" style={{ width: `${(c.total / stats.spent) * 100}%` }} />
+                        <div className="h-1.5 bg-sunken rounded-full mt-1.5 overflow-hidden">
+                          <div className="h-full bg-accent rounded-full" style={{ width: `${(c.total / stats.spent) * 100}%` }} />
                         </div>
                       </div>
                     </button>
@@ -196,7 +196,7 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
       <Card className="overflow-hidden">
         <div className="px-5 pt-5">
           <SectionTitle action={
-            <button onClick={() => goTo('spending')} className="text-sm font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-0.5 normal-case tracking-normal">
+            <button onClick={() => goTo('spending')} className="text-sm font-semibold text-accent hover:text-accent flex items-center gap-0.5 normal-case tracking-normal">
               See all <ChevronRight size={16} />
             </button>
           }>Recent activity</SectionTitle>
@@ -220,23 +220,23 @@ function UpcomingCard({ recurring, onOpen }: { recurring: RecurringItem[]; onOpe
   return (
     <Card className="p-6">
       <SectionTitle action={
-        <button onClick={onOpen} className="text-sm font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-0.5 normal-case tracking-normal">
+        <button onClick={onOpen} className="text-sm font-semibold text-accent hover:text-accent flex items-center gap-0.5 normal-case tracking-normal">
           All recurring <ChevronRight size={16} />
         </button>
       }>Next 2 weeks</SectionTitle>
-      <p className="text-sm text-slate-500 mb-2 flex items-center gap-1.5">
-        <CalendarClock size={15} className="text-blue-600" />
-        <Money value={totalOut} whole className="font-semibold text-slate-900" /> in bills & subscriptions coming up
+      <p className="text-sm text-muted mb-2 flex items-center gap-1.5">
+        <CalendarClock size={15} className="text-accent" />
+        <Money value={totalOut} whole className="font-semibold text-ink" /> in bills & subscriptions coming up
       </p>
-      <ul className="divide-y divide-slate-100">
+      <ul className="divide-y divide-line">
         {upcoming.slice(0, 6).map(o => (
           <li key={`${o.item.key}-${o.date}`} className="flex items-center justify-between gap-3 py-2.5">
             <div className="min-w-0">
-              <p className="font-semibold text-slate-900 truncate">{o.item.name}</p>
-              <p className="text-xs text-slate-500">{friendlyDay(o.date)}</p>
+              <p className="font-semibold text-ink truncate">{o.item.name}</p>
+              <p className="text-xs text-muted">{friendlyDay(o.date)}</p>
             </div>
-            <span className={cn('font-semibold shrink-0', o.item.kind === 'income' ? 'text-green-600' : 'text-slate-900')}>
-              {o.item.variable && <span className="text-slate-400 font-medium">~</span>}
+            <span className={cn('font-semibold shrink-0', o.item.kind === 'income' ? 'text-positive' : 'text-ink')}>
+              {o.item.variable && <span className="text-faint font-medium">~</span>}
               <Money value={o.item.kind === 'income' ? o.item.amount : -o.item.amount} signed />
             </span>
           </li>

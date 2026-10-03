@@ -23,24 +23,24 @@ export function SetupChecklist() {
   ];
 
   return (
-    <div className="text-left mt-8 border-t border-slate-100 pt-6">
-      <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Setup checklist</p>
+    <div className="text-left mt-8 border-t border-line pt-6">
+      <p className="eyebrow text-muted mb-3">Setup checklist</p>
       <ul className="space-y-2.5">
         {items.map(i => (
           <li key={i.label} className="flex items-start gap-2.5 text-sm">
             {i.ok
-              ? <CheckCircle2 size={18} className="text-green-600 shrink-0 mt-px" />
-              : <Circle size={18} className={i.required ? 'text-amber-500 shrink-0 mt-px' : 'text-slate-300 shrink-0 mt-px'} />}
+              ? <CheckCircle2 size={18} className="text-positive shrink-0 mt-px" />
+              : <Circle size={18} className={i.required ? 'text-warn shrink-0 mt-px' : 'text-faint shrink-0 mt-px'} />}
             <span>
-              <span className="font-semibold text-slate-800">{i.label}</span>
-              {!i.required && <span className="text-slate-400"> (optional)</span>}
-              <span className="block text-xs text-slate-500">{i.hint}</span>
+              <span className="font-semibold text-ink">{i.label}</span>
+              {!i.required && <span className="text-faint"> (optional)</span>}
+              <span className="block text-xs text-muted">{i.hint}</span>
             </span>
           </li>
         ))}
       </ul>
       {status.plaidEnv === 'sandbox' && (
-        <p className="text-xs text-slate-500 mt-4 bg-slate-50 rounded-xl p-3">
+        <p className="text-xs text-muted mt-4 bg-sunken rounded-xl p-3">
           You&apos;re in Plaid <b>sandbox</b>: link a test bank with username <code>user_good</code> / password <code>pass_good</code>.
           Set <code>PLAID_ENV=production</code> to connect real accounts.
         </p>

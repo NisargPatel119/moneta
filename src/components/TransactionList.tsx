@@ -16,10 +16,10 @@ export function TransactionRow({ t, accountName, rules, onSelect }: {
     <>
       <TransactionIcon t={t} categoryKey={key} />
       <div className="min-w-0 flex-1">
-        <p className="font-semibold text-slate-900 truncate">{displayName(t)}</p>
-        <p className="text-xs text-slate-500 font-medium truncate mt-0.5 flex items-center gap-1">
-          {t.edited && <Pencil size={11} className="shrink-0 text-blue-500" aria-label={t.edited === 'rule' ? 'Edited by a rule' : 'Edited'} />}
-          {t.notes && <StickyNote size={11} className="shrink-0 text-amber-500" aria-label="Has a note" />}
+        <p className="font-semibold text-ink truncate">{displayName(t)}</p>
+        <p className="text-xs text-muted font-medium truncate mt-0.5 flex items-center gap-1">
+          {t.edited && <Pencil size={11} className="shrink-0 text-accent" aria-label={t.edited === 'rule' ? 'Edited by a rule' : 'Edited'} />}
+          {t.notes && <StickyNote size={11} className="shrink-0 text-warn" aria-label="Has a note" />}
           <span className="truncate">
             {categoryMeta(key).label}
             {accountName && <> · {accountName}</>}
@@ -28,8 +28,8 @@ export function TransactionRow({ t, accountName, rules, onSelect }: {
       </div>
       <div className="text-right shrink-0">
         {/* Plaid: positive = money out. Flip so inflows read as + */}
-        <Money value={-t.amount} signed className={cn('font-bold', inflow ? 'text-green-600' : 'text-slate-900')} />
-        {t.pending && <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600 mt-0.5">Pending</p>}
+        <Money value={-t.amount} signed className={cn('font-bold', inflow ? 'text-positive' : 'text-ink')} />
+        {t.pending && <p className="eyebrow text-[10px] text-warn mt-0.5">Pending</p>}
       </div>
     </>
   );
@@ -37,7 +37,7 @@ export function TransactionRow({ t, accountName, rules, onSelect }: {
   return (
     <li>
       {onSelect ? (
-        <button onClick={() => onSelect(t)} className="w-full text-left flex items-center gap-3 px-4 sm:px-5 py-3 hover:bg-slate-50 transition-colors">
+        <button onClick={() => onSelect(t)} className="w-full text-left flex items-center gap-3 px-4 sm:px-5 py-3 hover:bg-sunken transition-colors">
           {content}
         </button>
       ) : (
@@ -56,7 +56,7 @@ export function TransactionList({ transactions, accountName, rules, onSelect, em
   emptyText?: string;
 }) {
   if (transactions.length === 0) {
-    return <p className="p-10 text-center text-slate-500 font-medium">{emptyText}</p>;
+    return <p className="p-10 text-center text-muted font-medium">{emptyText}</p>;
   }
 
   const groups: { day: string; items: Txn[] }[] = [];
@@ -70,10 +70,10 @@ export function TransactionList({ transactions, accountName, rules, onSelect, em
     <div>
       {groups.map(g => (
         <section key={g.day}>
-          <h4 className="sticky top-0 z-[1] bg-slate-50/95 backdrop-blur px-4 sm:px-5 py-1.5 text-xs font-bold text-slate-500 border-y border-slate-100">
+          <h4 className="sticky top-0 z-[1] bg-sunken/95 backdrop-blur px-4 sm:px-5 py-1.5 text-xs font-bold text-muted border-y border-line">
             {friendlyDay(g.day)}
           </h4>
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-line">
             {g.items.map(t => (
               <TransactionRow key={t.transaction_id} t={t} rules={rules} onSelect={onSelect} accountName={accountName?.(t.account_id)} />
             ))}

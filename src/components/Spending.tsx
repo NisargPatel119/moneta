@@ -8,7 +8,7 @@ import {
   sumIncome, sumSpending,
 } from '@/lib/finance';
 import type { TxnRules } from '@/lib/transfers';
-import { Card, Money, SectionTitle, cn, usePrivacy } from './ui';
+import { Card, Money, SectionTitle, cn, usePrivacy, tint } from './ui';
 import { TransactionList } from './TransactionList';
 
 type Period = 'this' | 'last' | '90';
@@ -19,8 +19,8 @@ const PERIODS: { id: Period; label: string }[] = [
   { id: '90', label: 'Last 90 days' },
 ];
 
-const THIS_MONTH = '#2a78d6';
-const LAST_MONTH = '#94a3b8';
+const THIS_MONTH = 'var(--accent)';
+const LAST_MONTH = 'var(--faint)';
 
 function periodRange(p: Period) {
   if (p === 'this') return monthRange(0);
@@ -108,21 +108,21 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
     .map(type => ({ type, accounts: data.accounts.filter(a => (a.type ?? 'other') === type) }))
     .filter(g => g.accounts.length > 0);
 
-  const tooltipStyle = { borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgb(0 0 0 / 0.08)', fontSize: 13 };
-  const axisTick = { fontSize: 12, fill: '#64748b' };
+  const tooltipStyle = { borderRadius: 12, border: '1px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', boxShadow: '0 4px 12px rgb(0 0 0 / 0.08)', fontSize: 13 };
+  const axisTick = { fontSize: 12, fill: 'var(--muted)' };
 
   return (
     <div className="space-y-5">
       {/* Filters: one row above everything they control */}
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <div className="inline-flex bg-slate-200/60 rounded-xl p-1 self-start">
+        <div className="inline-flex bg-sunken rounded-xl p-1 self-start">
           {PERIODS.map(p => (
             <button
               key={p.id}
               onClick={() => setPeriod(p.id)}
               className={cn(
                 'px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap',
-                period === p.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                period === p.id ? 'bg-surface text-ink' : 'text-muted hover:text-ink'
               )}
             >
               {p.label}
@@ -133,7 +133,7 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
         <select
           value={accountId}
           onChange={e => setAccountId(e.target.value)}
-          className="flex-1 min-w-0 sm:flex-none sm:max-w-xs truncate bg-white border border-slate-300 text-slate-900 text-sm rounded-xl p-2.5 font-medium shadow-sm outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-1 min-w-0 sm:flex-none sm:max-w-xs truncate bg-surface border border-line-strong text-ink text-sm rounded-xl p-2.5 font-medium outline-none focus:ring-2 focus:ring-accent"
         >
           <option value="all">All accounts</option>
           {groupedAccounts.map(g => (
@@ -146,7 +146,7 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
         </select>
         <button
           onClick={onOpenTransfers}
-          className="shrink-0 flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 text-sm rounded-xl px-3 font-semibold shadow-sm hover:bg-slate-50"
+          className="shrink-0 flex items-center gap-1.5 bg-surface border border-line-strong text-ink-2 text-sm rounded-xl px-3 font-semibold hover:bg-sunken"
         >
           <SlidersHorizontal size={16} /> Rules
         </button>
@@ -154,25 +154,25 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
       </div>
 
       {period === 'this' && periodTxns.length === 0 && (
-        <div className="flex items-center justify-between gap-3 rounded-2xl bg-blue-50 border border-blue-100 p-4 text-sm font-medium text-blue-900">
+        <div className="flex items-center justify-between gap-3 rounded-2xl bg-accent-soft border border-accent/20 p-4 text-sm font-medium text-accent">
           <span>No transactions yet this month. Banks can take a day or two to post new ones.</span>
-          <button onClick={() => setPeriod('last')} className="shrink-0 font-semibold text-blue-700 underline">See last month</button>
+          <button onClick={() => setPeriod('last')} className="shrink-0 font-semibold text-accent underline">See last month</button>
         </div>
       )}
 
       {/* Totals */}
       <div className="grid grid-cols-3 gap-3">
         <Card className="p-4 sm:p-5">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Spent</p>
-          <Money value={spent} whole className="block text-lg sm:text-2xl font-bold text-slate-900 mt-1" />
+          <p className="eyebrow text-muted">Spent</p>
+          <Money value={spent} whole className="block text-3xl sm:text-4xl font-display font-normal tracking-tight leading-none text-ink mt-2" />
         </Card>
         <Card className="p-4 sm:p-5">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Income</p>
-          <Money value={income} whole className="block text-lg sm:text-2xl font-bold text-green-600 mt-1" />
+          <p className="eyebrow text-muted">Income</p>
+          <Money value={income} whole className="block text-3xl sm:text-4xl font-display font-normal tracking-tight leading-none text-positive mt-2" />
         </Card>
         <Card className="p-4 sm:p-5">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Net</p>
-          <Money value={income - spent} whole className={cn('block text-lg sm:text-2xl font-bold mt-1', income - spent >= 0 ? 'text-green-600' : 'text-slate-900')} />
+          <p className="eyebrow text-muted">Net</p>
+          <Money value={income - spent} whole className={cn('block text-3xl sm:text-4xl font-display font-normal tracking-tight leading-none mt-2', income - spent >= 0 ? 'text-positive' : 'text-ink')} />
         </Card>
       </div>
 
@@ -182,8 +182,8 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
           <>
             <SectionTitle>Spending pace</SectionTitle>
             <div className="flex gap-5 text-sm mb-3">
-              <span className="flex items-center gap-2 font-medium text-slate-700"><span className="w-4 h-0.5 rounded" style={{ backgroundColor: THIS_MONTH }} />This month</span>
-              <span className="flex items-center gap-2 font-medium text-slate-700"><span className="w-4 h-0.5 rounded" style={{ backgroundColor: LAST_MONTH }} />Last month</span>
+              <span className="flex items-center gap-2 font-medium text-ink-2"><span className="w-4 h-0.5 rounded" style={{ backgroundColor: THIS_MONTH }} />This month</span>
+              <span className="flex items-center gap-2 font-medium text-ink-2"><span className="w-4 h-0.5 rounded" style={{ backgroundColor: LAST_MONTH }} />Last month</span>
             </div>
           </>
         ) : (
@@ -193,7 +193,7 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
           <ResponsiveContainer width="100%" height="100%">
             {period === 'this' ? (
               <LineChart data={paceData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid vertical={false} stroke="#f1f5f9" />
+                <CartesianGrid vertical={false} stroke="var(--line)" />
                 <XAxis dataKey="day" tick={axisTick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={24} />
                 <YAxis tickFormatter={formatCompact} tick={axisTick} axisLine={false} tickLine={false} width={56} />
                 <Tooltip
@@ -202,14 +202,14 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
                   formatter={(v, name) => [formatMoney(Number(v)), name === 'thisMonth' ? 'This month' : 'Last month']}
                 />
                 <Line type="monotone" dataKey="lastMonth" stroke={LAST_MONTH} strokeWidth={2} dot={false} strokeDasharray="4 4" connectNulls={false} />
-                <Line type="monotone" dataKey="thisMonth" stroke={THIS_MONTH} strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff' }} connectNulls={false} />
+                <Line type="monotone" dataKey="thisMonth" stroke={THIS_MONTH} strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} connectNulls={false} />
               </LineChart>
             ) : (
               <BarChart data={dailyData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid vertical={false} stroke="#f1f5f9" />
+                <CartesianGrid vertical={false} stroke="var(--line)" />
                 <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} minTickGap={24} />
                 <YAxis tickFormatter={formatCompact} tick={axisTick} axisLine={false} tickLine={false} width={56} />
-                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: '#f1f5f9' }} formatter={v => [formatMoney(Number(v)), 'Spent']} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'var(--sunken)' }} formatter={v => [formatMoney(Number(v)), 'Spent']} />
                 <Bar dataKey="spend" fill={THIS_MONTH} radius={[4, 4, 0, 0]} />
               </BarChart>
             )}
@@ -229,21 +229,21 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
                 <li key={c.key}>
                   <button
                     onClick={() => setCategory(active ? null : c.key)}
-                    className={cn('w-full flex items-center gap-3 rounded-xl p-2 -mx-2 text-left transition-colors', active ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-slate-50')}
+                    className={cn('w-full flex items-center gap-3 rounded-xl p-2 -mx-2 text-left transition-colors', active ? 'bg-accent-soft ring-1 ring-accent/30' : 'hover:bg-sunken')}
                   >
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${c.color}1a`, color: c.color }}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: tint(c.color), color: c.color }}>
                       <Icon size={16} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between text-sm gap-2">
-                        <span className="font-semibold text-slate-800 truncate">{c.label}</span>
+                        <span className="font-semibold text-ink truncate">{c.label}</span>
                         <span className="shrink-0">
-                          <Money value={c.total} whole className="font-semibold text-slate-900" />
-                          <span className="text-slate-400 text-xs ml-1.5">{Math.round((c.total / spent) * 100)}%</span>
+                          <Money value={c.total} whole className="font-semibold text-ink" />
+                          <span className="text-faint text-xs ml-1.5">{Math.round((c.total / spent) * 100)}%</span>
                         </span>
                       </div>
-                      <div className="h-1.5 bg-slate-100 rounded-full mt-1.5 overflow-hidden">
-                        <div className="h-full bg-blue-600 rounded-full" style={{ width: `${(c.total / categories[0].total) * 100}%` }} />
+                      <div className="h-1.5 bg-sunken rounded-full mt-1.5 overflow-hidden">
+                        <div className="h-full bg-accent rounded-full" style={{ width: `${(c.total / categories[0].total) * 100}%` }} />
                       </div>
                     </div>
                   </button>
@@ -251,42 +251,42 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
               );
             })}
           </ul>
-          <p className="text-xs text-slate-400 mt-3">Tap a category to filter transactions. Transfers aren&apos;t counted as spending unless you turn that on in{' '}
+          <p className="text-xs text-faint mt-3">Tap a category to filter transactions. Transfers aren&apos;t counted as spending unless you turn that on in{' '}
             <button onClick={onOpenTransfers} className="underline font-semibold">Rules</button>. Tap a transaction to recategorize it.</p>
         </Card>
       )}
 
       {/* Transactions */}
       <Card className="overflow-hidden">
-        <div className="p-4 sm:p-5 space-y-3 border-b border-slate-100">
+        <div className="p-4 sm:p-5 space-y-3 border-b border-line">
           <div className="relative">
-            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
             <input
               type="search"
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="Search transactions"
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-3 py-2.5 text-base sm:text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+              className="w-full bg-sunken border border-line rounded-xl pl-10 pr-3 py-2.5 text-base sm:text-sm font-medium outline-none focus:ring-2 focus:ring-accent focus:bg-surface"
             />
           </div>
           <div className="flex items-center justify-between gap-2">
-            <p className="text-sm text-slate-500 font-medium">
+            <p className="text-sm text-muted font-medium">
               {visibleTxns.length} transaction{visibleTxns.length === 1 ? '' : 's'}
             </p>
             {hiddenCount > 0 && !showHidden && (
-              <button onClick={() => setShowHidden(true)} className="text-xs font-semibold text-slate-500 hover:text-slate-900">
+              <button onClick={() => setShowHidden(true)} className="text-xs font-semibold text-muted hover:text-ink">
                 {hiddenCount} hidden transfer{hiddenCount === 1 ? '' : 's'} · Show
               </button>
             )}
             {showHidden && !category && (
-              <button onClick={() => setShowHidden(false)} className="text-xs font-semibold text-slate-500 hover:text-slate-900">
+              <button onClick={() => setShowHidden(false)} className="text-xs font-semibold text-muted hover:text-ink">
                 Hide transfers
               </button>
             )}
             {category && (
               <button
                 onClick={() => setCategory(null)}
-                className="flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-bold px-2.5 py-1 rounded-full hover:bg-blue-100"
+                className="flex items-center gap-1 bg-accent-soft text-accent text-xs font-bold px-2.5 py-1 rounded-full hover:bg-accent-soft"
               >
                 {categoryMeta(category).label} <X size={14} />
               </button>

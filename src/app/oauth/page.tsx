@@ -36,9 +36,9 @@ export default function OAuthRedirectPage() {
   }, [ready, open]);
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center gap-4 p-6 text-center">
-      <p className="text-slate-600 font-medium">{message}</p>
-      <Link href="/" className="text-sm font-semibold text-blue-600">Back to dashboard</Link>
+    <div className="min-h-screen bg-canvas flex flex-col items-center justify-center gap-4 p-6 text-center">
+      <p className="text-muted font-medium">{message}</p>
+      <Link href="/" className="text-sm font-semibold text-accent">Back to dashboard</Link>
     </div>
   );
 }

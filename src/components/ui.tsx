@@ -1,9 +1,15 @@
 'use client';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Type } from 'lucide-react';
+import { BrandMark } from './BrandMark';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { categoryMeta, categoryOf, formatMoney, type Txn } from '@/lib/finance';
+
+// A soft background wash of any color (hex or CSS variable), for icon chips
+export function tint(color: string, percent = 12) {
+  return `color-mix(in srgb, ${color} ${percent}%, transparent)`;
+}
 
 export function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
@@ -71,20 +77,20 @@ export function Money({ value, whole, className, signed }: {
 // ---------- Layout primitives ----------
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn('bg-white rounded-3xl border border-slate-200 shadow-sm', className)}>{children}</div>;
+  return <div className={cn('bg-surface rounded-2xl border border-line', className)}>{children}</div>;
 }
 
 export function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex items-center justify-between mb-3">
-      <h3 className="text-slate-500 text-xs font-bold uppercase tracking-wider">{children}</h3>
+      <h3 className="text-muted eyebrow">{children}</h3>
       {action}
     </div>
   );
 }
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn('animate-pulse rounded-2xl bg-slate-200/70', className)} />;
+  return <div className={cn('animate-pulse rounded-2xl bg-sunken', className)} />;
 }
 
 // ---------- Transaction avatar: merchant logo, falling back to a category icon ----------
@@ -94,12 +100,12 @@ export function TransactionIcon({ t, categoryKey }: { t: Txn; categoryKey?: stri
   const Icon = meta.icon;
   if (t.logo_url) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={t.logo_url} alt="" className="w-10 h-10 rounded-xl object-cover border border-slate-200 shrink-0 bg-white" />;
+    return <img src={t.logo_url} alt="" className="w-10 h-10 rounded-xl object-cover border border-line shrink-0 bg-surface" />;
   }
   return (
     <div
       className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-      style={{ backgroundColor: `${meta.color}1a`, color: meta.color }}
+      style={{ backgroundColor: tint(meta.color), color: meta.color }}
     >
       <Icon size={18} />
     </div>
@@ -140,20 +146,20 @@ export function TextSizeControl() {
         title="Text size"
         aria-label="Text size"
         aria-expanded={open}
-        className="w-10 h-10 flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+        className="w-10 h-10 flex items-center justify-center rounded-xl text-muted hover:bg-sunken hover:text-ink transition-colors"
       >
         <Type size={18} />
       </button>
       {open && (
-        <div className="absolute right-0 top-12 z-30 w-64 bg-white rounded-2xl border border-slate-200 shadow-lg p-4">
+        <div className="absolute right-0 top-12 z-30 w-64 bg-surface rounded-2xl border border-line shadow-lg p-4">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Text size</p>
+            <p className="eyebrow text-muted">Text size</p>
             {size !== TEXT_SIZE_DEFAULT && (
-              <button onClick={() => apply(TEXT_SIZE_DEFAULT)} className="text-xs font-semibold text-blue-600">Reset</button>
+              <button onClick={() => apply(TEXT_SIZE_DEFAULT)} className="text-xs font-semibold text-accent">Reset</button>
             )}
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-[12px] font-bold text-slate-500">A</span>
+            <span className="text-[12px] font-bold text-muted">A</span>
             <input
               type="range"
               min={TEXT_SIZE_MIN}
@@ -162,12 +168,23 @@ export function TextSizeControl() {
               value={size}
               onChange={e => apply(Number(e.target.value))}
               aria-label="Text size"
-              className="flex-1 accent-blue-600"
+              className="flex-1 accent-[var(--accent)]"
             />
-            <span className="text-[19px] font-bold text-slate-500">A</span>
+            <span className="text-[19px] font-bold text-muted">A</span>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+// ---------- Brand ----------
+
+// The rosette coin mark (see BrandMark), in theme colors so it flips in dark mode
+export function Logo({ size = 'md' }: { size?: 'md' | 'lg' }) {
+  return (
+    <span aria-hidden="true" className="inline-flex shrink-0 rounded-full ring-1 ring-offset-2 ring-offset-canvas ring-line-strong">
+      <BrandMark size={size === 'lg' ? 56 : 40} ink="var(--ink)" paper="var(--canvas)" />
+    </span>
   );
 }

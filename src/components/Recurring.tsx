@@ -27,24 +27,24 @@ export function Recurring({ items, dismissedCount, onDismiss, onRestoreAll }: {
     <div className="space-y-5">
       <div className="grid grid-cols-3 gap-3">
         <Card className="p-4 sm:p-5">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Bills & subs</p>
-          <Money value={monthlyOut} whole className="block text-lg sm:text-2xl font-bold text-slate-900 mt-1" />
-          <p className="text-[11px] text-slate-400">per month</p>
+          <p className="eyebrow text-muted">Bills & subs</p>
+          <Money value={monthlyOut} whole className="block text-3xl sm:text-4xl font-display font-normal tracking-tight leading-none text-ink mt-2" />
+          <p className="text-[11px] text-faint">per month</p>
         </Card>
         <Card className="p-4 sm:p-5">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Subscriptions</p>
-          <p className="text-lg sm:text-2xl font-bold text-slate-900 mt-1">{subscriptions.length}</p>
-          <p className="text-[11px] text-slate-400"><Money value={subscriptions.reduce((s, i) => s + i.monthly, 0)} whole /> / mo</p>
+          <p className="eyebrow text-muted">Subscriptions</p>
+          <p className="text-3xl sm:text-4xl font-display font-normal tracking-tight leading-none text-ink mt-2">{subscriptions.length}</p>
+          <p className="text-[11px] text-faint"><Money value={subscriptions.reduce((s, i) => s + i.monthly, 0)} whole /> / mo</p>
         </Card>
         <Card className="p-4 sm:p-5">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Income</p>
-          <Money value={monthlyIn} whole className="block text-lg sm:text-2xl font-bold text-green-600 mt-1" />
-          <p className="text-[11px] text-slate-400">per month</p>
+          <p className="eyebrow text-muted">Income</p>
+          <Money value={monthlyIn} whole className="block text-3xl sm:text-4xl font-display font-normal tracking-tight leading-none text-positive mt-2" />
+          <p className="text-[11px] text-faint">per month</p>
         </Card>
       </div>
 
       {increases.map(i => (
-        <div key={i.key} className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <div key={i.key} className="flex items-start gap-3 rounded-2xl border border-warn/30 bg-warn-soft p-4 text-sm text-warn">
           <TrendingUp size={18} className="shrink-0 mt-0.5" />
           <span>
             <b>{i.name}</b> went up from <Money value={i.priceChange!.from} /> to <Money value={i.priceChange!.to} className="font-bold" />
@@ -63,9 +63,9 @@ export function Recurring({ items, dismissedCount, onDismiss, onRestoreAll }: {
               <SectionTitle>{section.title}</SectionTitle>
             </div>
             {list.length === 0 ? (
-              <p className="px-5 pb-5 text-sm text-slate-500">{section.empty}</p>
+              <p className="px-5 pb-5 text-sm text-muted">{section.empty}</p>
             ) : (
-              <ul className="divide-y divide-slate-100">
+              <ul className="divide-y divide-line">
                 {list.map(item => <RecurringRow key={item.key} item={item} onDismiss={onDismiss} />)}
               </ul>
             )}
@@ -73,7 +73,7 @@ export function Recurring({ items, dismissedCount, onDismiss, onRestoreAll }: {
         );
       })}
 
-      <p className="text-xs text-slate-400 px-1">
+      <p className="text-xs text-faint px-1">
         Found automatically from repeating charges in your history. It gets more accurate as Moneta stores more months.
         {dismissedCount > 0 && (
           <> {dismissedCount} dismissed · <button onClick={onRestoreAll} className="underline font-semibold">Restore</button></>
@@ -93,18 +93,18 @@ function RecurringRow({ item, onDismiss }: { item: RecurringItem; onDismiss: (ke
     <li className="flex items-center gap-3 px-4 sm:px-5 py-3 group">
       <TransactionIcon t={iconTxn} categoryKey={item.groupKey} />
       <div className="min-w-0 flex-1">
-        <p className="font-semibold text-slate-900 truncate">{item.name}</p>
-        <p className="text-xs text-slate-500 font-medium mt-0.5 truncate">
+        <p className="font-semibold text-ink truncate">{item.name}</p>
+        <p className="text-xs text-muted font-medium mt-0.5 truncate">
           {FREQUENCY_LABELS[item.frequency]} · Next: {when}
         </p>
       </div>
       <div className="text-right shrink-0">
-        <span className={cn('font-bold', item.kind === 'income' ? 'text-green-600' : 'text-slate-900')}>
-          {item.variable && <span className="text-slate-400 font-medium">~</span>}
+        <span className={cn('font-bold', item.kind === 'income' ? 'text-positive' : 'text-ink')}>
+          {item.variable && <span className="text-faint font-medium">~</span>}
           <Money value={item.amount} />
         </span>
         {item.priceChange && (
-          <p className={cn('text-[11px] font-semibold', item.priceChange.to > item.priceChange.from ? 'text-amber-600' : 'text-green-600')}>
+          <p className={cn('text-[11px] font-semibold', item.priceChange.to > item.priceChange.from ? 'text-warn' : 'text-positive')}>
             was <Money value={item.priceChange.from} />
           </p>
         )}
@@ -113,7 +113,7 @@ function RecurringRow({ item, onDismiss }: { item: RecurringItem; onDismiss: (ke
         onClick={() => onDismiss(item.key)}
         title="Not recurring"
         aria-label={`${item.name} isn't recurring`}
-        className="p-1.5 -mr-1.5 rounded-lg text-slate-300 hover:text-slate-600 hover:bg-slate-100 shrink-0"
+        className="p-1.5 -mr-1.5 rounded-lg text-faint hover:text-muted hover:bg-sunken shrink-0"
       >
         <X size={16} />
       </button>
@@ -148,17 +148,17 @@ function BillsCalendar({ items }: { items: RecurringItem[] }) {
   return (
     <Card className="p-4 sm:p-5">
       <div className="flex items-center justify-between mb-3">
-        <button onClick={() => { setOffset(o => o - 1); setSelected(null); }} disabled={offset <= 0} aria-label="Previous month" className="p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-30"><ChevronLeft size={18} /></button>
+        <button onClick={() => { setOffset(o => o - 1); setSelected(null); }} disabled={offset <= 0} aria-label="Previous month" className="p-1.5 rounded-lg hover:bg-sunken disabled:opacity-30"><ChevronLeft size={18} /></button>
         <div className="text-center">
-          <p className="font-bold text-slate-900">{first.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
-          <p className="text-xs text-slate-500">~<Money value={monthTotal} whole /> in bills & subscriptions</p>
+          <p className="font-bold text-ink">{first.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
+          <p className="text-xs text-muted">~<Money value={monthTotal} whole /> in bills & subscriptions</p>
         </div>
-        <button onClick={() => { setOffset(o => o + 1); setSelected(null); }} disabled={offset >= 2} aria-label="Next month" className="p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-30"><ChevronRight size={18} /></button>
+        <button onClick={() => { setOffset(o => o + 1); setSelected(null); }} disabled={offset >= 2} aria-label="Next month" className="p-1.5 rounded-lg hover:bg-sunken disabled:opacity-30"><ChevronRight size={18} /></button>
       </div>
 
       <div className="grid grid-cols-7 gap-1 text-center">
         {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-          <div key={i} className="text-[11px] font-bold text-slate-400 pb-1">{d}</div>
+          <div key={i} className="text-[11px] font-bold text-faint pb-1">{d}</div>
         ))}
         {cells.map((day, i) => {
           if (!day) return <div key={`blank-${i}`} />;
@@ -170,25 +170,25 @@ function BillsCalendar({ items }: { items: RecurringItem[] }) {
               onClick={() => setSelected(list ? (selected === day ? null : day) : null)}
               className={cn(
                 'rounded-lg py-1.5 min-h-[3rem] flex flex-col items-center justify-start gap-0.5 transition-colors',
-                list ? 'bg-blue-50 hover:bg-blue-100' : '',
-                day === today && 'ring-2 ring-blue-500',
-                selected === day && 'bg-blue-100',
+                list ? 'bg-accent-soft hover:bg-accent-soft' : '',
+                day === today && 'ring-2 ring-accent',
+                selected === day && 'bg-accent-soft',
                 day < today && 'opacity-50',
               )}
             >
-              <span className="text-xs font-semibold text-slate-700">{parseDay(day).getDate()}</span>
-              {list && <Money value={total} whole className="text-[10px] font-bold text-blue-700 leading-none" />}
+              <span className="text-xs font-semibold text-ink-2">{parseDay(day).getDate()}</span>
+              {list && <Money value={total} whole className="text-[10px] font-bold text-accent leading-none" />}
             </button>
           );
         })}
       </div>
 
       {selectedItems.length > 0 && (
-        <ul className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+        <ul className="mt-3 space-y-1.5 border-t border-line pt-3">
           {selectedItems.map(i => (
             <li key={i.key} className="flex justify-between text-sm">
-              <span className="text-slate-700 font-medium truncate">{i.name}</span>
-              <Money value={i.amount} className="font-semibold text-slate-900" />
+              <span className="text-ink-2 font-medium truncate">{i.name}</span>
+              <Money value={i.amount} className="font-semibold text-ink" />
             </li>
           ))}
         </ul>

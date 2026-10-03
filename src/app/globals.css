@@ -1,22 +1,108 @@
 @import "tailwindcss";
 
+/*
+  Moneta's design tokens: warm editorial light theme + a dark theme that follows the system.
+  Components use the semantic names (bg-canvas, text-ink, border-line, bg-accent…) so both
+  themes come from this one file.
+*/
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  color-scheme: light;
+  --canvas: #f6f2ea;        /* page: warm cream */
+  --surface: #fffdf8;       /* cards: paper */
+  --sunken: #efe9dd;        /* wells, hovers, segmented controls */
+  --line: #e4dccb;          /* hairlines */
+  --line-strong: #cfc5b1;
+  --ink: #1d1b16;           /* primary text, primary buttons */
+  --ink-2: #3a362e;
+  --muted: #6f6757;
+  --faint: #a29a89;
+  --accent: #2e6a5c;        /* verdigris: the patina on Roman bronze */
+  --accent-strong: #234f45;
+  --accent-soft: #e2ece7;
+  --on-accent: #fffdf8;
+  --positive: #2e6a5c;
+  --positive-soft: #e2ece7;
+  --negative: #b4432c;
+  --negative-soft: #f6e4de;
+  --warn: #8a5a12;
+  --warn-soft: #f8ecd4;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Validated categorical chart palette (dataviz skill), light steps */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    color-scheme: dark;
+    --canvas: #13120f;
+    --surface: #1b1a16;
+    --sunken: #24221d;
+    --line: #2f2c25;
+    --line-strong: #433f35;
+    --ink: #f2ede3;
+    --ink-2: #d9d2c4;
+    --muted: #a39b8b;
+    --faint: #6e675a;
+    --accent: #7db8a6;
+    --accent-strong: #9fd0c0;
+    --accent-soft: #1f2e29;
+    --on-accent: #0f1a16;
+    --positive: #7db8a6;
+    --positive-soft: #1f2e29;
+    --negative: #e07a5f;
+    --negative-soft: #35201a;
+    --warn: #e2b25c;
+    --warn-soft: #33270f;
+
+    /* Dark steps of the same chart palette, re-validated for the dark surface */
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
   }
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-positive: var(--positive);
+  --color-positive-soft: var(--positive-soft);
+  --color-negative: var(--negative);
+  --color-negative-soft: var(--negative-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-display: var(--font-instrument-serif), Georgia, "Times New Roman", serif;
+}
+
+/* Small uppercase monospace label above a number or section ("NET WORTH") */
+@utility eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 /* Compact default; the in-app text size slider overrides this on <html> */
@@ -32,7 +118,7 @@ html {
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }

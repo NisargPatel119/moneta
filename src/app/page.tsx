@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Building2, CheckCircle2, ChartPie, Eye, EyeOff, Landmark, LayoutDashboard, LineChart, LogOut, Plus, Receipt,
+  Building2, CheckCircle2, ChartPie, Eye, EyeOff, Landmark, LayoutDashboard, LogOut, Plus, Receipt,
   RefreshCw, Sparkles, TriangleAlert, X,
 } from 'lucide-react';
 import { logout } from '@/app/login/actions';
@@ -17,7 +17,7 @@ import { TransactionEditor, type TxnEdit } from '@/components/TransactionEditor'
 import { Recurring } from '@/components/Recurring';
 import { detectRecurring } from '@/lib/recurring';
 import { DEFAULT_TRANSFER_RULES, makeTxnRules, type TransferRules } from '@/lib/transfers';
-import { Card, PrivacyProvider, Skeleton, TextSizeControl, cn, usePrivacy } from '@/components/ui';
+import { Card, Logo, PrivacyProvider, Skeleton, TextSizeControl, cn, usePrivacy } from '@/components/ui';
 import { type CategoryRule, type DashboardData, type Txn, merchantKey, timeAgo } from '@/lib/finance';
 
 type Tab = 'overview' | 'spending' | 'investments' | 'accounts' | 'assistant';
@@ -150,18 +150,16 @@ function Dashboard() {
   const initialLoading = !data && !error;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-900 selection:bg-blue-100">
+    <div className="min-h-screen bg-canvas font-sans text-ink selection:bg-accent-soft">
       {/* Header */}
-      <header className="bg-white/90 backdrop-blur border-b border-slate-200 sticky top-0 z-20 pt-[env(safe-area-inset-top)]">
+      <header className="bg-surface/90 backdrop-blur border-b border-line sticky top-0 z-20 pt-[env(safe-area-inset-top)]">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="bg-blue-600 text-white p-1.5 rounded-xl shadow-inner shadow-blue-700/50 shrink-0">
-              <LineChart size={22} strokeWidth={2.5} />
-            </div>
+            <Logo />
             <div className="min-w-0">
-              <h1 className="text-lg sm:text-xl font-bold tracking-tight leading-tight">Moneta</h1>
+              <h1 className="font-display text-2xl tracking-tight leading-none">Moneta</h1>
               {data?.fetchedAt && (
-                <p className="text-[11px] text-slate-500 font-medium leading-tight truncate">
+                <p className="text-[11px] text-muted font-medium leading-tight truncate">
                   {refreshing ? 'Refreshing…' : `Updated ${timeAgo(data.fetchedAt)}`}
                 </p>
               )}
@@ -191,32 +189,32 @@ function Dashboard() {
           <LoadingSkeleton />
         ) : error && !data ? (
           <Card className="p-10 text-center max-w-lg mx-auto mt-6">
-            <TriangleAlert className="mx-auto text-amber-500" size={32} />
-            <h2 className="text-lg font-bold mt-4">Couldn&apos;t load your data</h2>
-            <p className="text-slate-500 mt-2 text-sm">{error}</p>
-            <button onClick={load} className="mt-6 bg-blue-600 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-blue-700">Try again</button>
+            <TriangleAlert className="mx-auto text-warn" size={32} />
+            <h2 className="font-display text-3xl mt-4">Couldn&apos;t load your data</h2>
+            <p className="text-muted mt-2 text-sm">{error}</p>
+            <button onClick={load} className="mt-6 bg-accent text-on-accent px-5 py-2.5 rounded-xl font-semibold hover:bg-accent-strong">Try again</button>
             <SetupChecklist />
           </Card>
         ) : !data?.linked ? (
           <Card className="p-10 sm:p-12 text-center max-w-lg mx-auto mt-6">
-            <div className="mx-auto w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center text-blue-600">
+            <div className="mx-auto w-16 h-16 bg-accent-soft rounded-full flex items-center justify-center text-accent">
               <Building2 size={28} />
             </div>
-            <h2 className="text-2xl font-semibold mt-6">Connect your first account</h2>
-            <p className="text-slate-500 mt-3 leading-relaxed">
+            <h2 className="font-display text-4xl tracking-tight mt-6">Connect your first account</h2>
+            <p className="text-muted mt-3 leading-relaxed">
               Link your bank, credit card, or investment accounts securely with Plaid to see your net worth and track spending.
             </p>
             <button
               onClick={() => plaid.start('bank')}
               disabled={plaid.status === 'preparing'}
-              className="mt-8 bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold shadow-md shadow-blue-600/20 hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-2"
+              className="mt-8 bg-accent text-on-accent px-6 py-3 rounded-xl font-semibold hover:bg-accent-strong disabled:opacity-50 inline-flex items-center gap-2"
             >
               <Plus size={18} /> Link a bank or card
             </button>
             <button
               onClick={() => plaid.start('brokerage')}
               disabled={plaid.status === 'preparing'}
-              className="mt-3 block mx-auto text-sm font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50"
+              className="mt-3 block mx-auto text-sm font-semibold text-accent hover:text-accent disabled:opacity-50"
             >
               or link a brokerage / retirement account
             </button>
@@ -233,10 +231,10 @@ function Dashboard() {
                     onClick={() => goTo(id)}
                     className={cn(
                       'w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-semibold transition-all',
-                      tab === id ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'text-slate-600 hover:bg-slate-200/50 hover:text-slate-900'
+                      tab === id ? 'bg-surface text-ink ring-1 ring-line' : 'text-muted hover:bg-sunken hover:text-ink'
                     )}
                   >
-                    <Icon size={20} className={tab === id ? 'text-blue-100' : 'text-slate-400'} />
+                    <Icon size={20} className={tab === id ? 'text-accent' : 'text-faint'} />
                     {label}
                   </button>
                 ))}
@@ -259,7 +257,7 @@ function Dashboard() {
                 </Banner>
               ))}
 
-              <h2 className="text-xl font-bold">{TABS.find(t => t.id === tab)?.label}</h2>
+              <h2 className="font-display text-4xl tracking-tight">{TABS.find(t => t.id === tab)?.label}</h2>
 
               {tab === 'overview' && (
                 <Overview
@@ -274,14 +272,14 @@ function Dashboard() {
               )}
               {tab === 'spending' && (
                 <>
-                  <div className="inline-flex bg-slate-200/60 rounded-xl p-1">
+                  <div className="inline-flex bg-sunken rounded-xl p-1">
                     {(['activity', 'recurring'] as const).map(v => (
                       <button
                         key={v}
                         onClick={() => setSpendingView(v)}
                         className={cn(
                           'px-4 py-1.5 rounded-lg text-sm font-semibold capitalize transition-colors',
-                          spendingView === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                          spendingView === v ? 'bg-surface text-ink' : 'text-muted hover:text-ink'
                         )}
                       >
                         {v}
@@ -344,13 +342,13 @@ function Dashboard() {
 
       {/* Mobile bottom tab bar */}
       {data?.linked && (
-        <nav className="md:hidden fixed bottom-0 inset-x-0 z-20 bg-white/95 backdrop-blur border-t border-slate-200 pb-[env(safe-area-inset-bottom)]">
+        <nav className="md:hidden fixed bottom-0 inset-x-0 z-20 bg-surface/95 backdrop-blur border-t border-line pb-[env(safe-area-inset-bottom)]">
           <div className="grid grid-cols-5">
             {TABS.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 onClick={() => goTo(id)}
-                className={cn('flex flex-col items-center gap-1 py-2 text-[11px] font-semibold transition-colors', tab === id ? 'text-blue-600' : 'text-slate-500')}
+                className={cn('flex flex-col items-center gap-1 py-2 text-[11px] font-semibold transition-colors', tab === id ? 'text-accent' : 'text-muted')}
               >
                 <Icon size={20} />
                 {label}
@@ -368,7 +366,7 @@ function IconButton({ label, children, ...props }: { label: string; children: Re
     <button
       title={label}
       aria-label={label}
-      className="w-10 h-10 flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors disabled:opacity-60"
+      className="w-10 h-10 flex items-center justify-center rounded-xl text-muted hover:bg-sunken hover:text-ink transition-colors disabled:opacity-60"
       {...props}
     >
       {children}
@@ -397,19 +395,19 @@ function LinkMenu({ onPick, busy }: { onPick: (kind: LinkKind) => void; busy: bo
         onClick={() => setOpen(o => !o)}
         disabled={busy}
         aria-expanded={open}
-        className="flex items-center gap-1.5 bg-slate-900 text-white h-10 px-3 sm:px-4 rounded-xl font-semibold text-sm disabled:opacity-50 hover:bg-slate-800 transition-colors"
+        className="flex items-center gap-1.5 bg-ink text-canvas h-10 px-3 sm:px-4 rounded-xl font-semibold text-sm disabled:opacity-50 hover:bg-ink-2 transition-colors"
       >
         {busy ? <RefreshCw size={18} className="animate-spin" /> : <Plus size={18} />}
         <span className="hidden sm:inline">Link account</span>
       </button>
       {open && (
-        <div className="absolute right-0 top-12 z-30 w-72 bg-white rounded-2xl border border-slate-200 shadow-lg p-2">
+        <div className="absolute right-0 top-12 z-30 w-72 bg-surface rounded-2xl border border-line shadow-lg p-2">
           {options.map(({ kind, label, hint, icon: Icon }) => (
-            <button key={kind} onClick={() => onPick(kind)} className="w-full flex items-start gap-3 p-3 rounded-xl hover:bg-slate-50 text-left">
-              <Icon size={18} className="text-blue-600 mt-0.5 shrink-0" />
+            <button key={kind} onClick={() => onPick(kind)} className="w-full flex items-start gap-3 p-3 rounded-xl hover:bg-sunken text-left">
+              <Icon size={18} className="text-accent mt-0.5 shrink-0" />
               <span>
-                <span className="block font-semibold text-slate-900 text-sm">{label}</span>
-                <span className="block text-xs text-slate-500 mt-0.5">{hint}</span>
+                <span className="block font-semibold text-ink text-sm">{label}</span>
+                <span className="block text-xs text-muted mt-0.5">{hint}</span>
               </span>
             </button>
           ))}
@@ -423,7 +421,7 @@ function Banner({ tone, children, action }: { tone: 'warn' | 'ok'; children: Rea
   return (
     <div className={cn(
       'flex items-start gap-3 rounded-2xl border p-4 text-sm font-medium',
-      tone === 'warn' ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-green-50 border-green-200 text-green-900'
+      tone === 'warn' ? 'bg-warn-soft border-warn/30 text-warn' : 'bg-positive-soft border-positive/30 text-positive'
     )}>
       {tone === 'warn' ? <TriangleAlert size={18} className="shrink-0 mt-0.5" /> : <CheckCircle2 size={18} className="shrink-0 mt-0.5" />}
       <div className="flex-1">{children}</div>
@@ -458,7 +456,7 @@ function LoadingSkeleton() {
           <Skeleton className="h-48" />
           <Skeleton className="h-48" />
         </div>
-        <p className="text-center text-sm text-slate-400 font-medium">Syncing with your banks…</p>
+        <p className="text-center text-sm text-faint font-medium">Syncing with your banks…</p>
       </div>
     </div>
   );
