@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isDemo } from '@/lib/demoData';
 import { errorMessage, plaidErrorBody } from '@/lib/errors';
 import { plaidClient } from '@/lib/plaid';
 import { sql } from '@/lib/db';
@@ -6,6 +7,9 @@ import { clearFinancialCache } from '@/lib/plaidData';
 
 // Disconnect one bank: revoke it at Plaid (stops billing for the Item) and delete its token
 export async function POST(request: Request) {
+  if (isDemo()) {
+    return NextResponse.json({ error: 'Linking accounts is turned off in the demo. Deploy your own copy of Moneta to connect your banks.' }, { status: 400 });
+  }
   const { item_id } = await request.json().catch(() => ({}));
   if (typeof item_id !== 'string' || !item_id) {
     return NextResponse.json({ error: 'item_id is required' }, { status: 400 });

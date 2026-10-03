@@ -112,6 +112,10 @@ function Dashboard() {
     const key = merchantKey(txn);
     setData(d => d && {
       ...d,
+      // Show the new merchant rule in the Rules sheet right away
+      rules: edit.applyToMerchant
+        ? [{ id: -Date.now(), merchant_key: key, category: edit.category ?? null, rename: edit.name ?? null }, ...d.rules.filter(r => r.merchant_key !== key)]
+        : d.rules,
       transactions: d.transactions.map(t => {
         const affected = edit.applyToMerchant ? merchantKey(t) === key : t.transaction_id === txn.transaction_id;
         if (!affected) return t;
@@ -130,14 +134,15 @@ function Dashboard() {
       body: JSON.stringify(edit),
     });
     if (!res.ok) setError('Could not save that change.');
-    fetchData();
+    // The demo doesn't save edits on the server, so keep the local copy instead of reloading
+    if (!data?.demo) fetchData();
   };
 
   const deleteRule = async (rule: CategoryRule) => {
     setData(d => d && { ...d, rules: d.rules.filter(r => r.id !== rule.id) });
     const res = await fetch(`/api/rules/${rule.id}`, { method: 'DELETE' });
     if (!res.ok) setError('Could not delete that rule.');
-    fetchData();
+    if (!data?.demo) fetchData();
   };
 
   const goTo = (next: Tab, cat?: string) => {
@@ -175,9 +180,9 @@ function Dashboard() {
             </IconButton>
             <TextSizeControl />
             <LinkMenu onPick={plaid.start} busy={plaid.status === 'preparing'} />
-            <form action={logout}>
+            {!data?.demo && <form action={logout}>
               <IconButton label="Log out" type="submit"><LogOut size={18} /></IconButton>
-            </form>
+            </form>}
           </div>
         </div>
       </header>
@@ -244,6 +249,12 @@ function Dashboard() {
             <section className="flex-1 min-w-0 space-y-5">
               {error && (
                 <Banner tone="warn">Couldn&apos;t refresh just now ({error}). Showing your last loaded data.</Banner>
+              )}
+              {data.demo && (
+                <Banner tone="ok">
+                  You&apos;re exploring Moneta with made-up demo data. Edits last until you reload.{' '}
+                  <a href="https://github.com/NisargPatel119/moneta" className="font-semibold underline">Set up your own</a>
+                </Banner>
               )}
               {data.issues?.map(issue => (
                 <Banner key={issue.item_id} tone="warn" action={

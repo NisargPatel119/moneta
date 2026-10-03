@@ -1,11 +1,11 @@
 import { neon } from '@neondatabase/serverless';
 
-if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL is not set');
-}
-
-// neon() creates a standard sql tagged template function for executing queries
-export const sql = neon(process.env.DATABASE_URL);
+// neon() creates a standard sql tagged template function for executing queries.
+// Without DATABASE_URL (e.g. demo mode) the app still starts; queries fail with a clear message.
+const connect = () => neon(process.env.DATABASE_URL!);
+export const sql: ReturnType<typeof connect> = process.env.DATABASE_URL
+  ? connect()
+  : ((() => { throw new Error('DATABASE_URL is not set'); }) as unknown as ReturnType<typeof connect>);
 
 // Create tables on first use (and add newer columns), so a fresh deploy or an upgrade
 // needs no manual setup step. Every statement is idempotent.

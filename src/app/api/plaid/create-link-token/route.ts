@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isDemo } from '@/lib/demoData';
 import { describeError, errorMessage, plaidErrorBody } from '@/lib/errors';
 import { plaidClient } from '@/lib/plaid';
 import { CountryCode, Products } from 'plaid';
@@ -13,6 +14,9 @@ const CONFIG = {
 };
 
 export async function POST(request: Request) {
+  if (isDemo()) {
+    return NextResponse.json({ error: 'Linking accounts is turned off in the demo. Deploy your own copy of Moneta to connect your banks.' }, { status: 400 });
+  }
   try {
     const body = await request.json().catch(() => ({}));
     const kind: keyof typeof CONFIG = body.kind === 'brokerage' ? 'brokerage' : 'bank';

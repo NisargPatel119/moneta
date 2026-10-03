@@ -3,6 +3,7 @@ import { errorMessage, plaidErrorBody } from '@/lib/errors';
 import { ensureSchema, sql } from '@/lib/db';
 import { plaidClient } from '@/lib/plaid';
 import { getSettings, type AppSettings } from '@/lib/settings';
+import { getDemoData, isDemo } from '@/lib/demoData';
 import { dayKey, type CategoryRule, type NetWorthPoint, type Txn } from '@/lib/finance';
 import {
   isStale, readNetWorthHistory, readRules, readTransactions, snapshotBalances, syncItemTransactions,
@@ -31,6 +32,8 @@ export type Issue = { item_id: string; code: string; message: string };
 
 export type FinancialData = {
   linked: boolean;
+  /** Made-up data from demo mode (see demoData.ts) */
+  demo?: boolean;
   netWorth: number;
   assets: number;
   liabilities: number;
@@ -53,6 +56,7 @@ export function clearFinancialCache() {
 }
 
 export async function getFinancialData({ bypassCache = false, forceSync = false } = {}): Promise<FinancialData> {
+  if (isDemo()) return getDemoData();
   if (!bypassCache && cache && Date.now() - cache.at < CACHE_MS) return cache.data;
 
   await ensureSchema();

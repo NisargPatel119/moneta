@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { isDemo } from '@/lib/demoData';
 import { ensureSchema, sql } from '@/lib/db';
 import { errorMessage } from '@/lib/errors';
 import { EDITABLE_CATEGORIES, merchantKey } from '@/lib/finance';
@@ -17,6 +18,8 @@ type EditBody = {
 const clean = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  // Demo mode: pretend it worked; the page keeps the change for this visit only
+  if (isDemo()) return NextResponse.json({ success: true, demo: true });
   try {
     const { id } = await params;
     const body = (await request.json().catch(() => ({}))) as EditBody;

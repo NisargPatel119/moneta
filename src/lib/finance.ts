@@ -37,6 +37,7 @@ export type DashboardIssue = { item_id: string; code: string; message: string };
 
 export type DashboardData = {
   linked: boolean;
+  demo?: boolean;
   netWorth: number;
   assets: number;
   liabilities: number;

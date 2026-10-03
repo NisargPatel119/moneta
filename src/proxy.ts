@@ -5,6 +5,11 @@ import { SESSION_COOKIE, verifySessionToken } from '@/lib/session';
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Demo mode shows only made-up data, so there's nothing to protect: skip the login screen
+  if (process.env.DEMO_MODE === 'true' || process.env.DEMO_MODE === '1') {
+    return pathname === '/login' ? NextResponse.redirect(new URL('/', req.url)) : NextResponse.next();
+  }
+
   // Vercel Cron can't sign in; the cron route checks CRON_SECRET itself
   if (pathname.startsWith('/api/cron/')) {
     return NextResponse.next();

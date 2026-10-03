@@ -6,6 +6,14 @@ Moneta is a free alternative to subscription apps like Monarch Money, Copilot, a
 
 The difference: **it runs on your own free accounts, with your own keys.** Your financial data lives in your own database, behind your own password. There's no company in the middle, no subscription, and no ads.
 
+<p align="center">
+  <img src="docs/screenshots/overview.jpg" width="24%" alt="Overview: net worth over time" />
+  <img src="docs/screenshots/recurring.jpg" width="24%" alt="Recurring: subscriptions, bills, and a price-increase alert" />
+  <img src="docs/screenshots/investing.jpg" width="24%" alt="Investing: portfolio value, gains, and allocation" />
+  <img src="docs/screenshots/overview-dark.jpg" width="24%" alt="Overview in dark mode" />
+</p>
+<p align="center"><sub>Screenshots use Moneta's built-in demo data. Try it yourself in one command: <code>npm run demo</code>.</sub></p>
+
 ---
 
 ## Why "Moneta"?
@@ -51,6 +59,19 @@ So Moneta is money, memory, and good advice in one name. That's what this app tr
 
 ¹ Plaid's free Trial plan is for new Plaid teams in the US and Canada and includes Transactions, Balance, and Investments. One "connection" is one login at one institution, so linking Chase plus Fidelity uses 2 of your 10, no matter how many accounts each has. Beyond that, Plaid has a pay-as-you-go plan. Check [Plaid's pricing](https://plaid.com/pricing/) for current terms.
 
+## Try it in one minute (no accounts needed)
+
+```bash
+git clone https://github.com/<you>/moneta.git
+cd moneta
+npm install
+npm run demo
+```
+
+Open [http://localhost:3001](http://localhost:3001). Demo mode fills Moneta with a realistic, made-up household (paychecks, rent, subscriptions, a brokerage, a 401(k), a year of net worth history) so you can click through everything. It needs no Plaid, database, or password, and never reads real data. Edits stay until you reload.
+
+Want a public demo link? Deploy a separate Vercel project with `DEMO_MODE=true`. Leave `GROQ_API_KEY` unset there unless you're happy for visitors to use your free AI quota.
+
 ## Replace your subscription in about 30 minutes
 
 ### 1. Get your own copy
@@ -88,6 +109,7 @@ Create a key at [console.groq.com/keys](https://console.groq.com/keys). For extr
    | `GROQ_API_KEY` | | Enables the Ask AI tab |
    | `GROQ_MODEL` | | Override the AI model (default `openai/gpt-oss-120b`) |
    | `CRON_SECRET` | | Any long random string. Turns on the daily background sync |
+   | `DEMO_MODE` | | `true` shows made-up demo data with no login. Only for a separate demo deployment |
    | `PLAID_REDIRECT_URI` | | `https://<your-app>.vercel.app/oauth`, see [Phone + big banks](#phone--big-banks) |
 
 3. Click **Deploy**.
@@ -175,6 +197,7 @@ src/
     transactionStore.ts Plaid sync → Postgres, balance snapshots, net worth history
     transfers.ts        Internal transfer matching + per-type transfer rules
     recurring.ts        Recurring bill/subscription/income detection
+    demoData.ts         Made-up demo household for DEMO_MODE / npm run demo
     financialContext.ts Builds the AI's data snapshot
     finance.ts          Categories, formatting, spending math
     session.ts          Signed session cookies
@@ -183,7 +206,7 @@ src/
 
 ## Contributing
 
-Issues and pull requests are welcome, especially for anything in [Limitations](#limitations). Please never include real financial data, API keys, or screenshots with real balances in issues or PRs.
+Issues and pull requests are welcome, especially for anything in [Limitations](#limitations). Please never include real financial data, API keys, or screenshots with real balances in issues or PRs. Use `npm run demo` for screenshots.
 
 ## License
 
