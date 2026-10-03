@@ -155,6 +155,10 @@ src/
 
 Issues and pull requests are welcome, especially for anything in [Limitations](#limitations). Please never include real financial data, API keys, or screenshots with real balances in issues or PRs.
 
+## License
+
+[MIT](LICENSE): free to use, modify, and share.
+
 ## Disclaimer
 
 WealthSync is provided as-is, without warranty. It isn't financial advice, and the AI assistant can make mistakes. Not affiliated with Plaid, Groq, Vercel, Neon, or any of the apps mentioned above.
