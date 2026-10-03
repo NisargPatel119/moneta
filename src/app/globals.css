@@ -19,6 +19,18 @@
   }
 }
 
+/* Compact default; the in-app text size slider overrides this on <html> */
+html {
+  font-size: 14px;
+}
+
+/* iPhone zooms the page when focusing an input under 16px, so keep inputs at least 16px on touch screens */
+@media (pointer: coarse) {
+  input, select, textarea {
+    font-size: max(16px, 1rem) !important;
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

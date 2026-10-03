@@ -1,369 +1,321 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
-import LinkBank from '@/components/LinkBank';
-import { 
-  LineChart, 
-  Building2, 
-  LayoutDashboard, 
-  Activity,
-  ArrowUpRight,
-  ArrowDownRight,
-  CreditCard,
-  Wallet,
-  Landmark
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Building2, CheckCircle2, ChartPie, Eye, EyeOff, Landmark, LayoutDashboard, LineChart, LogOut, Plus, Receipt,
+  RefreshCw, Sparkles, TriangleAlert, X,
 } from 'lucide-react';
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { logout } from '@/app/login/actions';
+import { type LinkKind, usePlaidConnect } from '@/components/usePlaidConnect';
+import { Overview } from '@/components/Overview';
+import { Spending } from '@/components/Spending';
+import { Accounts } from '@/components/Accounts';
+import { Investments } from '@/components/Investments';
+import { Assistant, type ChatMessage } from '@/components/Assistant';
+import { Card, PrivacyProvider, Skeleton, TextSizeControl, cn, usePrivacy } from '@/components/ui';
+import { type DashboardData, timeAgo } from '@/lib/finance';
 
-function cn(...inputs: (string | undefined | null | false)[]) {
-  return twMerge(clsx(inputs));
-}
+type Tab = 'overview' | 'spending' | 'investments' | 'accounts' | 'assistant';
+
+const TABS: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { id: 'spending', label: 'Spending', icon: Receipt },
+  { id: 'investments', label: 'Investing', icon: ChartPie },
+  { id: 'accounts', label: 'Accounts', icon: Building2 },
+  { id: 'assistant', label: 'Ask AI', icon: Sparkles },
+];
 
 export default function Home() {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'accounts'>('overview');
-  
-  // New state for filtering transactions by account
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('all');
+  return (
+    <PrivacyProvider>
+      <Dashboard />
+    </PrivacyProvider>
+  );
+}
 
-  const loadDashboard = () => {
-    setLoading(true);
+function Dashboard() {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [tab, setTab] = useState<Tab>('overview');
+  const [category, setCategory] = useState<string | null>(null);
+  const [chat, setChat] = useState<ChatMessage[]>([]);
+  const [, forceTick] = useState(0);
+  const { hidden, toggle } = usePrivacy();
+
+  const load = useCallback(() => {
+    setRefreshing(true);
+    setError(null);
     fetch('/api/dashboard')
-      .then(res => res.json())
-      .then(setData)
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    loadDashboard();
+      .then(async res => {
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || 'Something went wrong');
+        setData(body);
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setRefreshing(false));
   }, []);
 
-  // Filter transactions based on selected account
-  const filteredTransactions = useMemo(() => {
-    if (!data?.transactions) return [];
-    if (selectedAccountId === 'all') return data.transactions;
-    return data.transactions.filter((t: any) => t.account_id === selectedAccountId);
-  }, [data, selectedAccountId]);
+  useEffect(() => { load(); }, [load]);
 
-  // Aggregate spend data for the bar chart (last 30 days)
-  const chartData = useMemo(() => {
-    if (!data?.transactions) return [];
-    
-    // Generate an array of the last 30 dates
-    const last30Days = [...Array(30)].map((_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (29 - i));
-      return d.toISOString().split('T')[0];
-    });
-    
-    return last30Days.map(dateStr => {
-      const dayTransactions = filteredTransactions.filter((t: any) => t.date === dateStr && t.amount > 0);
-      const totalSpend = dayTransactions.reduce((sum: number, t: any) => sum + t.amount, 0);
-      return {
-        date: new Date(dateStr).toLocaleDateString('en-US', {month: 'short', day: 'numeric'}),
-        spend: totalSpend
-      };
-    });
-  }, [filteredTransactions, data]);
+  // Keep the "Updated x min ago" label fresh
+  useEffect(() => {
+    const id = setInterval(() => forceTick(n => n + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
-  // Group accounts by product type
-  const groupedAccounts = useMemo(() => {
-    if (!data?.accounts) return {};
-    return data.accounts.reduce((acc: any, account: any) => {
-      const type = account.type || 'other'; 
-      if (!acc[type]) acc[type] = [];
-      acc[type].push(account);
-      return acc;
-    }, {});
+  const plaid = usePlaidConnect(load);
+
+  const accountName = useMemo(() => {
+    const names = new Map(data?.accounts.map(a => [a.account_id, a.mask ? `${a.name} ••${a.mask}` : a.name]));
+    return (id: string) => names.get(id);
   }, [data]);
 
-  const typeLabels: Record<string, string> = {
-    depository: "Cash & Checking",
-    credit: "Credit Cards",
-    loan: "Loans",
-    investment: "Investments",
-    other: "Other Accounts"
+  const goTo = (next: Tab, cat?: string) => {
+    setTab(next);
+    setCategory(cat ?? null);
+    window.scrollTo({ top: 0 });
   };
 
-  const getAccountName = (accountId: string) => {
-    const acc = data?.accounts?.find((a: any) => a.account_id === accountId);
-    return acc ? acc.name : 'Unknown Account';
-  };
-
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center text-slate-500 font-medium bg-[#F8FAFC]">Syncing with your banks...</div>;
-  }
+  const initialLoading = !data && !error;
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-900 selection:bg-blue-100">
-      
-      {/* Top Navbar */}
-      <nav className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center sticky top-0 z-10 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="bg-blue-600 text-white p-2 rounded-xl shadow-inner shadow-blue-700/50">
-            <LineChart size={24} strokeWidth={2.5} />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">WealthSync</h1>
-        </div>
-        <LinkBank />
-      </nav>
-
-      <main className="max-w-6xl mx-auto p-6 md:p-10">
-        {!data?.linked ? (
-          <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center shadow-sm max-w-lg mx-auto mt-10">
-            <div className="mx-auto w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mb-6 text-blue-600">
-              <Building2 size={32} />
+      {/* Header */}
+      <header className="bg-white/90 backdrop-blur border-b border-slate-200 sticky top-0 z-20 pt-[env(safe-area-inset-top)]">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="bg-blue-600 text-white p-1.5 rounded-xl shadow-inner shadow-blue-700/50 shrink-0">
+              <LineChart size={22} strokeWidth={2.5} />
             </div>
-            <h2 className="text-2xl font-semibold text-slate-900">Connect your accounts</h2>
-            <p className="text-slate-500 mt-3 max-w-sm mx-auto leading-relaxed">
-              Link your bank or investment accounts securely using Plaid to calculate your net worth and track spending.
-            </p>
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-bold tracking-tight leading-tight">WealthSync</h1>
+              {data?.fetchedAt && (
+                <p className="text-[11px] text-slate-500 font-medium leading-tight truncate">
+                  {refreshing ? 'Refreshing…' : `Updated ${timeAgo(data.fetchedAt)}`}
+                </p>
+              )}
+            </div>
           </div>
-        ) : (
-          <div className="flex flex-col md:flex-row gap-10">
-            
-            {/* Sidebar Navigation */}
-            <aside className="w-full md:w-64 shrink-0 space-y-2">
-              <button 
-                onClick={() => setActiveTab('overview')}
-                className={cn(
-                  "w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl font-semibold transition-all duration-200", 
-                  activeTab === 'overview' ? "bg-blue-600 text-white shadow-md shadow-blue-600/20" : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900"
-                )}
-              >
-                <LayoutDashboard size={20} className={activeTab === 'overview' ? "text-blue-100" : "text-slate-400"} />
-                Net Worth
-              </button>
-              
-              <button 
-                onClick={() => setActiveTab('transactions')}
-                className={cn(
-                  "w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl font-semibold transition-all duration-200", 
-                  activeTab === 'transactions' ? "bg-blue-600 text-white shadow-md shadow-blue-600/20" : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900"
-                )}
-              >
-                <Activity size={20} className={activeTab === 'transactions' ? "text-blue-100" : "text-slate-400"} />
-                Monthly Spend
-              </button>
 
-              <button 
-                onClick={() => setActiveTab('accounts')}
-                className={cn(
-                  "w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl font-semibold transition-all duration-200", 
-                  activeTab === 'accounts' ? "bg-blue-600 text-white shadow-md shadow-blue-600/20" : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900"
-                )}
-              >
-                <Building2 size={20} className={activeTab === 'accounts' ? "text-blue-100" : "text-slate-400"} />
-                Balances
-              </button>
+          <div className="flex items-center gap-1">
+            <IconButton label={refreshing ? 'Refreshing' : 'Refresh'} onClick={load} disabled={refreshing}>
+              <RefreshCw size={18} className={cn(refreshing && 'animate-spin')} />
+            </IconButton>
+            <IconButton label={hidden ? 'Show amounts' : 'Hide amounts'} onClick={toggle}>
+              {hidden ? <EyeOff size={18} /> : <Eye size={18} />}
+            </IconButton>
+            <TextSizeControl />
+            <LinkMenu onPick={plaid.start} busy={plaid.status === 'preparing'} />
+            <form action={logout}>
+              <IconButton label="Log out" type="submit"><LogOut size={18} /></IconButton>
+            </form>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 md:py-10 pb-28 md:pb-10">
+        <LinkStatus status={plaid.status} onClose={plaid.clearStatus} />
+
+        {initialLoading ? (
+          <LoadingSkeleton />
+        ) : error && !data ? (
+          <Card className="p-10 text-center max-w-lg mx-auto mt-6">
+            <TriangleAlert className="mx-auto text-amber-500" size={32} />
+            <h2 className="text-lg font-bold mt-4">Couldn&apos;t load your data</h2>
+            <p className="text-slate-500 mt-2 text-sm">{error}</p>
+            <button onClick={load} className="mt-6 bg-blue-600 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-blue-700">Try again</button>
+          </Card>
+        ) : !data?.linked ? (
+          <Card className="p-10 sm:p-12 text-center max-w-lg mx-auto mt-6">
+            <div className="mx-auto w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center text-blue-600">
+              <Building2 size={28} />
+            </div>
+            <h2 className="text-2xl font-semibold mt-6">Connect your first account</h2>
+            <p className="text-slate-500 mt-3 leading-relaxed">
+              Link your bank, credit card, or investment accounts securely with Plaid to see your net worth and track spending.
+            </p>
+            <button
+              onClick={() => plaid.start('bank')}
+              disabled={plaid.status === 'preparing'}
+              className="mt-8 bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold shadow-md shadow-blue-600/20 hover:bg-blue-700 disabled:opacity-50 inline-flex items-center gap-2"
+            >
+              <Plus size={18} /> Link a bank or card
+            </button>
+            <button
+              onClick={() => plaid.start('brokerage')}
+              disabled={plaid.status === 'preparing'}
+              className="mt-3 block mx-auto text-sm font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50"
+            >
+              or link a brokerage / retirement account
+            </button>
+          </Card>
+        ) : (
+          <div className="flex gap-10">
+            {/* Desktop sidebar */}
+            <aside className="hidden md:block w-56 shrink-0">
+              <nav className="space-y-1.5 sticky top-26">
+                {TABS.map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    onClick={() => goTo(id)}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-semibold transition-all',
+                      tab === id ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'text-slate-600 hover:bg-slate-200/50 hover:text-slate-900'
+                    )}
+                  >
+                    <Icon size={20} className={tab === id ? 'text-blue-100' : 'text-slate-400'} />
+                    {label}
+                  </button>
+                ))}
+              </nav>
             </aside>
 
-            {/* Main Content Area */}
-            <section className="flex-1 min-w-0">
-              
-              {/* --- TAB: OVERVIEW (Net Worth) --- */}
-              {activeTab === 'overview' && (
-                <div className="space-y-6">
-                  <h2 className="text-xl font-bold mb-4">Financial Overview</h2>
-                  
-                  <div className="grid grid-cols-1 gap-6">
-                    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden">
-                      <div className="absolute top-0 right-0 p-8 opacity-10">
-                        <Wallet size={120} />
-                      </div>
-                      <p className="text-slate-500 text-sm font-bold uppercase tracking-widest mb-2">Total Net Worth</p>
-                      <p className="text-5xl md:text-6xl font-black tracking-tight text-slate-900">
-                        {data.netWorth?.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                      </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-4">
-                        <div className="bg-green-100 p-4 rounded-2xl text-green-600">
-                          <ArrowUpRight size={28} />
-                        </div>
-                        <div>
-                          <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Total Assets</p>
-                          <p className="text-3xl font-bold text-slate-900">
-                            {data.assets?.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-4">
-                        <div className="bg-red-100 p-4 rounded-2xl text-red-600">
-                          <ArrowDownRight size={28} />
-                        </div>
-                        <div>
-                          <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Total Liabilities</p>
-                          <p className="text-3xl font-bold text-slate-900">
-                            {data.liabilities?.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+            <section className="flex-1 min-w-0 space-y-5">
+              {error && (
+                <Banner tone="warn">Couldn&apos;t refresh just now ({error}). Showing your last loaded data.</Banner>
               )}
+              {data.issues?.map(issue => (
+                <Banner key={issue.item_id} tone="warn" action={
+                  issue.code === 'ITEM_LOGIN_REQUIRED' ? undefined : <button onClick={load} className="font-semibold underline">Retry</button>
+                }>
+                  {issue.code === 'ITEM_LOGIN_REQUIRED'
+                    ? 'One of your banks needs you to sign in again. Re-link it with "Link account".'
+                    : issue.code === 'ADDITIONAL_CONSENT_REQUIRED'
+                      ? 'To see holdings for one of your accounts, re-link it with "Link account" → Brokerage.'
+                      : issue.message}
+                </Banner>
+              ))}
 
-              {/* --- TAB: TRANSACTIONS (Monthly Spend) --- */}
-              {activeTab === 'transactions' && (
-                <div className="space-y-6">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-                    <h2 className="text-xl font-bold">Monthly Spend Analysis</h2>
-                    
-                    <select 
-                      value={selectedAccountId}
-                      onChange={(e) => setSelectedAccountId(e.target.value)}
-                      className="bg-white border border-slate-300 text-slate-900 text-sm rounded-xl focus:ring-blue-500 focus:border-blue-500 block p-2.5 font-medium shadow-sm outline-none"
-                    >
-                      <option value="all">All Linked Accounts</option>
-                      {Object.keys(groupedAccounts).map((type) => (
-                        <optgroup key={type} label={typeLabels[type] || type}>
-                          {groupedAccounts[type].map((acc: any) => (
-                            <option key={acc.account_id} value={acc.account_id}>
-                              {acc.name} (...{acc.mask})
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
-                  </div>
-                  
-                  {/* Spend Graph */}
-                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                    <h3 className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-6">Daily Spend (Last 30 Days)</h3>
-                    <div className="h-64 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                          <XAxis 
-                            dataKey="date" 
-                            tick={{fontSize: 12, fill: '#64748b'}} 
-                            axisLine={false} 
-                            tickLine={false}
-                            minTickGap={20}
-                          />
-                          <YAxis 
-                            tickFormatter={(value) => `$${value}`} 
-                            tick={{fontSize: 12, fill: '#64748b'}} 
-                            axisLine={false} 
-                            tickLine={false}
-                          />
-                          <Tooltip 
-                            formatter={(value: any) => [Number(value).toLocaleString('en-US', { style: 'currency', currency: 'USD' }), 'Spend']}
-                            labelStyle={{ color: '#0f172a', fontWeight: 'bold' }}
-                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' }}
-                          />
-                          <Bar dataKey="spend" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                  
-                  {/* Transaction List */}
-                  <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden mt-6">
-                    <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center">
-                      <h3 className="font-semibold text-lg text-slate-900">Recent Transactions</h3>
-                    </div>
-                    <ul className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
-                      {filteredTransactions.length === 0 ? (
-                        <li className="p-12 text-center text-slate-500 font-medium">No transactions found for this account.</li>
-                      ) : (
-                        filteredTransactions.map((t: any) => {
-                          const isSpend = t.amount > 0;
-                          return (
-                            <li key={t.transaction_id} className="p-5 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                              <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-xl shrink-0 border border-slate-200">
-                                  {t.personal_finance_category?.primary === 'FOOD_AND_DRINK' ? '🍔' : 
-                                   t.personal_finance_category?.primary === 'TRANSPORTATION' ? '🚗' : 
-                                   t.personal_finance_category?.primary === 'TRAVEL' ? '✈️' : '💳'}
-                                </div>
-                                <div>
-                                  <p className="font-bold text-slate-900">{t.name}</p>
-                                  <p className="text-sm text-slate-500 font-medium mt-0.5">
-                                    {t.personal_finance_category?.primary?.replace(/_/g, ' ') || 'UNCATEGORIZED'} 
-                                    <span className="mx-2 text-slate-300">•</span> 
-                                    {new Date(t.date).toLocaleDateString('en-US', {month: 'short', day: 'numeric'})}
-                                  </p>
-                                  {selectedAccountId === 'all' && (
-                                    <p className="text-xs text-blue-600 mt-1 font-semibold">
-                                      {getAccountName(t.account_id)}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                              <div className={`font-bold text-lg ${isSpend ? 'text-slate-900' : 'text-green-600'}`}>
-                                {isSpend ? '-' : '+'}{Math.abs(t.amount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                              </div>
-                            </li>
-                          );
-                        })
-                      )}
-                    </ul>
-                  </div>
-                </div>
-              )}
+              <h2 className="text-xl font-bold">{TABS.find(t => t.id === tab)?.label}</h2>
 
-              {/* --- TAB: ACCOUNTS (Balances) --- */}
-              {activeTab === 'accounts' && (
-                <div className="space-y-8">
-                  <h2 className="text-xl font-bold mb-6">Linked Accounts</h2>
-                  
-                  {Object.keys(groupedAccounts).map((type) => (
-                    <div key={type} className="space-y-4">
-                      <div className="flex items-center gap-2 text-slate-700">
-                        <Landmark size={20} className="text-blue-600" />
-                        <h3 className="text-lg font-bold">{typeLabels[type] || type}</h3>
-                        <span className="bg-slate-200 text-slate-600 text-xs font-bold px-2 py-0.5 rounded-full ml-2">
-                          {groupedAccounts[type].length}
-                        </span>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {groupedAccounts[type].map((acc: any) => {
-                          const isLiability = acc.type === 'credit' || acc.type === 'loan';
-                          return (
-                            <div key={acc.account_id} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-                              <div className="flex justify-between items-start mb-6">
-                                <div className="flex items-center gap-3">
-                                  <div className="p-3 rounded-2xl bg-blue-50 text-blue-600">
-                                    {isLiability ? <CreditCard size={24} /> : <Wallet size={24} />}
-                                  </div>
-                                  <div>
-                                    <h4 className="font-bold text-slate-900 line-clamp-1">{acc.name}</h4>
-                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-0.5">{acc.subtype.replace(/_/g, ' ')}</p>
-                                  </div>
-                                </div>
-                                {acc.mask && (
-                                  <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">
-                                    •••{acc.mask}
-                                  </span>
-                                )}
-                              </div>
-                              
-                              <div>
-                                <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Current Balance</p>
-                                <p className={cn("text-2xl font-black tracking-tight", isLiability ? "text-slate-900" : "text-green-600")}>
-                                  {acc.balances.current?.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                                </p>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                  
-                </div>
-              )}
-
+              {tab === 'overview' && <Overview data={data} goTo={goTo} accountName={accountName} />}
+              {tab === 'spending' && <Spending data={data} accountName={accountName} category={category} setCategory={setCategory} />}
+              {tab === 'investments' && <Investments data={data} onLinkBrokerage={() => plaid.start('brokerage')} />}
+              {tab === 'accounts' && <Accounts data={data} />}
+              {tab === 'assistant' && <Assistant messages={chat} setMessages={setChat} />}
             </section>
           </div>
         )}
       </main>
+
+      {/* Mobile bottom tab bar */}
+      {data?.linked && (
+        <nav className="md:hidden fixed bottom-0 inset-x-0 z-20 bg-white/95 backdrop-blur border-t border-slate-200 pb-[env(safe-area-inset-bottom)]">
+          <div className="grid grid-cols-5">
+            {TABS.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => goTo(id)}
+                className={cn('flex flex-col items-center gap-1 py-2 text-[11px] font-semibold transition-colors', tab === id ? 'text-blue-600' : 'text-slate-500')}
+              >
+                <Icon size={20} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </nav>
+      )}
+    </div>
+  );
+}
+
+function IconButton({ label, children, ...props }: { label: string; children: React.ReactNode } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      title={label}
+      aria-label={label}
+      className="w-10 h-10 flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors disabled:opacity-60"
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+function LinkMenu({ onPick, busy }: { onPick: (kind: LinkKind) => void; busy: boolean }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    // Defer so the click that opened the menu doesn't immediately close it
+    const id = setTimeout(() => document.addEventListener('click', close), 0);
+    return () => { clearTimeout(id); document.removeEventListener('click', close); };
+  }, [open]);
+
+  const options: { kind: LinkKind; label: string; hint: string; icon: typeof Landmark }[] = [
+    { kind: 'bank', label: 'Bank or credit card', hint: 'Checking, savings, cards, loans', icon: Landmark },
+    { kind: 'brokerage', label: 'Brokerage or retirement', hint: 'Fidelity, Vanguard, Schwab, 401(k), IRA…', icon: ChartPie },
+  ];
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        disabled={busy}
+        aria-expanded={open}
+        className="flex items-center gap-1.5 bg-slate-900 text-white h-10 px-3 sm:px-4 rounded-xl font-semibold text-sm disabled:opacity-50 hover:bg-slate-800 transition-colors"
+      >
+        {busy ? <RefreshCw size={18} className="animate-spin" /> : <Plus size={18} />}
+        <span className="hidden sm:inline">Link account</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-12 z-30 w-72 bg-white rounded-2xl border border-slate-200 shadow-lg p-2">
+          {options.map(({ kind, label, hint, icon: Icon }) => (
+            <button key={kind} onClick={() => onPick(kind)} className="w-full flex items-start gap-3 p-3 rounded-xl hover:bg-slate-50 text-left">
+              <Icon size={18} className="text-blue-600 mt-0.5 shrink-0" />
+              <span>
+                <span className="block font-semibold text-slate-900 text-sm">{label}</span>
+                <span className="block text-xs text-slate-500 mt-0.5">{hint}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Banner({ tone, children, action }: { tone: 'warn' | 'ok'; children: React.ReactNode; action?: React.ReactNode }) {
+  return (
+    <div className={cn(
+      'flex items-start gap-3 rounded-2xl border p-4 text-sm font-medium',
+      tone === 'warn' ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-green-50 border-green-200 text-green-900'
+    )}>
+      {tone === 'warn' ? <TriangleAlert size={18} className="shrink-0 mt-0.5" /> : <CheckCircle2 size={18} className="shrink-0 mt-0.5" />}
+      <div className="flex-1">{children}</div>
+      {action}
+    </div>
+  );
+}
+
+function LinkStatus({ status, onClose }: { status: string; onClose: () => void }) {
+  if (status === 'idle') return null;
+  if (status === 'preparing') return null;
+  const text = status === 'linking' ? 'Connecting your account…' : status === 'linked' ? 'Account linked! Loading your new data…' : 'Failed to link the account. Please try again.';
+  return (
+    <div className="mb-5">
+      <Banner tone={status === 'error' ? 'warn' : 'ok'} action={<button onClick={onClose} aria-label="Dismiss"><X size={16} /></button>}>
+        {text}
+      </Banner>
+    </div>
+  );
+}
+
+function LoadingSkeleton() {
+  return (
+    <div className="flex gap-10">
+      <div className="hidden md:block w-56 space-y-2">
+        {[0, 1, 2].map(i => <Skeleton key={i} className="h-12" />)}
+      </div>
+      <div className="flex-1 space-y-5">
+        <Skeleton className="h-6 w-32" />
+        <Skeleton className="h-56" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <Skeleton className="h-48" />
+          <Skeleton className="h-48" />
+        </div>
+        <p className="text-center text-sm text-slate-400 font-medium">Syncing with your banks…</p>
+      </div>
     </div>
   );
 }
