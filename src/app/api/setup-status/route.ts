@@ -9,5 +9,6 @@ export async function GET() {
     plaidEnv,
     plaidRedirect: !!process.env.PLAID_REDIRECT_URI,
     ai: !!process.env.GROQ_API_KEY,
+    cron: !!process.env.CRON_SECRET,
   });
 }

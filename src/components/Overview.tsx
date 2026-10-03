@@ -1,18 +1,23 @@
 'use client';
 import { useMemo } from 'react';
-import { ArrowDownRight, ArrowUpRight, ChevronRight, TrendingDown, TrendingUp } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, CalendarClock, ChevronRight, TrendingDown, TrendingUp } from 'lucide-react';
 import {
-  type DashboardData, isLiability, lastMonthSameDaySpending, monthRange, inRange,
+  type DashboardData, type Txn, dayKey, friendlyDay, isLiability, lastMonthSameDaySpending, monthRange, inRange,
   spendingByCategory, sumIncome, sumSpending,
 } from '@/lib/finance';
 import { Card, Money, SectionTitle, cn } from './ui';
 import { TransactionList } from './TransactionList';
 import type { TxnRules } from '@/lib/transfers';
+import { projectOccurrences, type RecurringItem } from '@/lib/recurring';
+import { NetWorthChart } from './NetWorthChart';
 
 // Validated categorical slots (dataviz palette): blue, aqua, orange
 const MIX_COLORS = { cash: '#2a78d6', investments: '#1baf7a', other: '#eb6834' };
 
-export function Overview({ data, rules, goTo, accountName }: {
+export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSelect, accountName }: {
+  recurring: RecurringItem[];
+  onOpenRecurring: () => void;
+  onSelect: (t: Txn) => void;
   data: DashboardData;
   rules: TxnRules;
   goTo: (tab: 'spending' | 'accounts' | 'investments', category?: string) => void;
@@ -58,6 +63,7 @@ export function Overview({ data, rules, goTo, accountName }: {
       <Card className="p-6 sm:p-8">
         <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">Net worth</p>
         <Money value={data.netWorth} className="block text-4xl sm:text-5xl font-black tracking-tight text-slate-900 mt-2" />
+        <NetWorthChart history={data.history ?? []} current={data.netWorth} />
 
         <div className="grid grid-cols-2 gap-3 mt-6">
           <button onClick={() => goTo('accounts')} className="text-left rounded-2xl bg-slate-50 p-4 hover:bg-slate-100 transition-colors">
@@ -95,6 +101,8 @@ export function Overview({ data, rules, goTo, accountName }: {
           </div>
         )}
       </Card>
+
+      <UpcomingCard recurring={recurring} onOpen={onOpenRecurring} />
 
       {stats.topHoldings.length > 0 && (
         <Card className="p-6">
@@ -193,8 +201,47 @@ export function Overview({ data, rules, goTo, accountName }: {
             </button>
           }>Recent activity</SectionTitle>
         </div>
-        <TransactionList transactions={data.transactions.filter(t => !rules.isHidden(t)).slice(0, 6)} rules={rules} accountName={accountName} />
+        <TransactionList transactions={data.transactions.filter(t => !rules.isHidden(t)).slice(0, 6)} rules={rules} accountName={accountName} onSelect={onSelect} />
       </Card>
     </div>
+  );
+}
+
+// Bills, subscriptions and paychecks expected in the next two weeks
+function UpcomingCard({ recurring, onOpen }: { recurring: RecurringItem[]; onOpen: () => void }) {
+  const start = dayKey(new Date());
+  const endDate = new Date();
+  endDate.setDate(endDate.getDate() + 14);
+  const end = dayKey(endDate);
+  const upcoming = projectOccurrences(recurring, start, end).filter(o => o.date >= start);
+  if (upcoming.length === 0) return null;
+  const totalOut = upcoming.filter(o => o.item.kind !== 'income').reduce((s, o) => s + o.item.amount, 0);
+
+  return (
+    <Card className="p-6">
+      <SectionTitle action={
+        <button onClick={onOpen} className="text-sm font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-0.5 normal-case tracking-normal">
+          All recurring <ChevronRight size={16} />
+        </button>
+      }>Next 2 weeks</SectionTitle>
+      <p className="text-sm text-slate-500 mb-2 flex items-center gap-1.5">
+        <CalendarClock size={15} className="text-blue-600" />
+        <Money value={totalOut} whole className="font-semibold text-slate-900" /> in bills & subscriptions coming up
+      </p>
+      <ul className="divide-y divide-slate-100">
+        {upcoming.slice(0, 6).map(o => (
+          <li key={`${o.item.key}-${o.date}`} className="flex items-center justify-between gap-3 py-2.5">
+            <div className="min-w-0">
+              <p className="font-semibold text-slate-900 truncate">{o.item.name}</p>
+              <p className="text-xs text-slate-500">{friendlyDay(o.date)}</p>
+            </div>
+            <span className={cn('font-semibold shrink-0', o.item.kind === 'income' ? 'text-green-600' : 'text-slate-900')}>
+              {o.item.variable && <span className="text-slate-400 font-medium">~</span>}
+              <Money value={o.item.kind === 'income' ? o.item.amount : -o.item.amount} signed />
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

@@ -1,10 +1,10 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { ArrowLeftRight, Search, X } from 'lucide-react';
+import { Search, SlidersHorizontal, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
   ACCOUNT_TYPE_LABELS, ACCOUNT_TYPE_ORDER, type DashboardData, categoryMeta, dayKey,
-  displayName, formatCompact, formatMoney, inRange, monthRange, parseDay, spendingByCategory,
+  type Txn, displayName, formatCompact, formatMoney, inRange, monthRange, parseDay, spendingByCategory,
   sumIncome, sumSpending,
 } from '@/lib/finance';
 import type { TxnRules } from '@/lib/transfers';
@@ -30,7 +30,8 @@ function periodRange(p: Period) {
   return { start: dayKey(start), end: dayKey(new Date()) };
 }
 
-export function Spending({ data, rules, accountName, category, setCategory, onOpenTransfers }: {
+export function Spending({ data, rules, accountName, category, setCategory, onOpenTransfers, onSelect }: {
+  onSelect: (t: Txn) => void;
   data: DashboardData;
   rules: TxnRules;
   accountName: (id: string) => string | undefined;
@@ -147,7 +148,7 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
           onClick={onOpenTransfers}
           className="shrink-0 flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 text-sm rounded-xl px-3 font-semibold shadow-sm hover:bg-slate-50"
         >
-          <ArrowLeftRight size={16} /> Transfers
+          <SlidersHorizontal size={16} /> Rules
         </button>
         </div>
       </div>
@@ -251,7 +252,7 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
             })}
           </ul>
           <p className="text-xs text-slate-400 mt-3">Tap a category to filter transactions. Transfers aren&apos;t counted as spending unless you turn that on in{' '}
-            <button onClick={onOpenTransfers} className="underline font-semibold">Transfers</button>.</p>
+            <button onClick={onOpenTransfers} className="underline font-semibold">Rules</button>. Tap a transaction to recategorize it.</p>
         </Card>
       )}
 
@@ -297,6 +298,7 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
             transactions={visibleTxns}
             rules={rules}
             accountName={accountId === 'all' ? accountName : undefined}
+            onSelect={onSelect}
             emptyText={query || category ? 'No transactions match your filters.' : 'No transactions in this period.'}
           />
         </div>

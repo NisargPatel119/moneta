@@ -1,6 +1,7 @@
 import type { FinancialData } from './plaidData';
 import { categoryMeta, displayName, inRange, monthRange, spendingByCategory, sumIncome, sumSpending, SECURITY_TYPE_LABELS } from './finance';
 import { TRANSFER_META, TRANSFER_TYPES, makeTxnRules } from './transfers';
+import { FREQUENCY_LABELS, detectRecurring } from './recurring';
 
 const money = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -39,6 +40,15 @@ export function buildFinancialContext(data: FinancialData) {
     lines.push(`- ${label}${offset === 0 ? ' (month to date)' : ''}: spent ${money(sumSpending(txns, rules))}, income ${money(sumIncome(txns))}. By category: ${cats || 'none'}`);
   }
 
+  const recurring = detectRecurring(data.transactions, rules, data.settings.dismissedRecurring);
+  if (recurring.length > 0) {
+    lines.push('', '## Recurring (detected from history)');
+    for (const r of recurring.slice(0, 25)) {
+      const change = r.priceChange ? `, price changed from ${money(r.priceChange.from)}` : '';
+      lines.push(`- ${r.name} [${r.kind}]: ${r.variable ? '~' : ''}${money(r.amount)} ${FREQUENCY_LABELS[r.frequency].toLowerCase()}, next ${r.nextDate}${change}`);
+    }
+  }
+
   if (data.holdings.length > 0) {
     const total = data.holdings.reduce((s, h) => s + h.value, 0);
     lines.push('', `## Investment holdings (total ${money(total)})`);
@@ -68,11 +78,11 @@ export function buildFinancialContext(data: FinancialData) {
   }
 
   lines.push('', '## Transactions, most recent first (positive = money out, negative = money in; [not spending] = excluded from spending totals)');
-  for (const t of data.transactions.slice(0, 150)) {
+  for (const t of data.transactions.slice(0, 120)) {
     const notSpending = t.amount > 0 && !rules.isSpending(t) ? ' [not spending]' : '';
     lines.push(`${t.date} | ${displayName(t)} | ${t.amount.toFixed(2)} | ${categoryMeta(rules.groupKey(t)).label}${notSpending}${t.pending ? ' (pending)' : ''} | ${accountNames.get(t.account_id) ?? ''}`);
   }
-  if (data.transactions.length > 150) lines.push(`(${data.transactions.length - 150} older transactions omitted)`);
+  if (data.transactions.length > 120) lines.push(`(${data.transactions.length - 120} older transactions omitted)`);
 
   return lines.join('\n');
 }

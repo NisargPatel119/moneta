@@ -24,6 +24,8 @@ export async function POST(request: Request) {
       },
       client_name: 'Moneta',
       ...CONFIG[kind],
+      // Ask for up to 2 years of transaction history (the default is 90 days)
+      transactions: { days_requested: 730 },
       country_codes: [CountryCode.Us],
       language: 'en',
       // Banks that use OAuth (Chase, Capital One, …) send phone users back here after signing in.

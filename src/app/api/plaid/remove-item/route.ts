@@ -24,6 +24,9 @@ export async function POST(request: Request) {
       console.error('itemRemove failed:', plaidErrorBody(e) || errorMessage(e));
     }
   }
+  // Its stored history goes too, so old balances don't linger in net worth
+  await sql`DELETE FROM transactions WHERE item_id = ${item_id}`;
+  await sql`DELETE FROM account_balances WHERE item_id = ${item_id}`;
   await sql`DELETE FROM plaid_items WHERE item_id = ${item_id}`;
   clearFinancialCache();
   return NextResponse.json({ success: true });

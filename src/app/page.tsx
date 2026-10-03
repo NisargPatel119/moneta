@@ -13,9 +13,12 @@ import { Investments } from '@/components/Investments';
 import { Assistant, type ChatMessage } from '@/components/Assistant';
 import { SetupChecklist } from '@/components/SetupChecklist';
 import { TransferSettings } from '@/components/TransferSettings';
+import { TransactionEditor, type TxnEdit } from '@/components/TransactionEditor';
+import { Recurring } from '@/components/Recurring';
+import { detectRecurring } from '@/lib/recurring';
 import { DEFAULT_TRANSFER_RULES, makeTxnRules, type TransferRules } from '@/lib/transfers';
 import { Card, PrivacyProvider, Skeleton, TextSizeControl, cn, usePrivacy } from '@/components/ui';
-import { type DashboardData, timeAgo } from '@/lib/finance';
+import { type CategoryRule, type DashboardData, type Txn, merchantKey, timeAgo } from '@/lib/finance';
 
 type Tab = 'overview' | 'spending' | 'investments' | 'accounts' | 'assistant';
 
@@ -43,12 +46,15 @@ function Dashboard() {
   const [category, setCategory] = useState<string | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [transfersOpen, setTransfersOpen] = useState(false);
+  const [spendingView, setSpendingView] = useState<'activity' | 'recurring'>('activity');
+  const [selectedTxn, setSelectedTxn] = useState<Txn | null>(null);
   const [, forceTick] = useState(0);
   const { hidden, toggle } = usePrivacy();
 
   // Only sets state in callbacks, so it can run straight from the mount effect
-  const fetchData = useCallback(() => {
-    fetch('/api/dashboard')
+  // refresh=true makes the server sync with Plaid even if it synced recently
+  const fetchData = useCallback((refresh = false) => {
+    fetch(refresh ? '/api/dashboard?refresh=1' : '/api/dashboard')
       .then(async res => {
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || 'Something went wrong');
@@ -61,7 +67,7 @@ function Dashboard() {
 
   const load = useCallback(() => {
     setRefreshing(true);
-    fetchData();
+    fetchData(true);
   }, [fetchData]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -84,18 +90,58 @@ function Dashboard() {
     [data]
   );
 
-  // Optimistic: apply immediately, then save so other devices (and the AI) use the same rules
-  const updateTransferRules = (transferRules: TransferRules) => {
-    setData(d => (d ? { ...d, settings: { ...d.settings, transferRules } } : d));
+
+  const recurring = useMemo(
+    () => (data ? detectRecurring(data.transactions, txnRules, data.settings?.dismissedRecurring ?? []) : []),
+    [data, txnRules]
+  );
+
+  // Optimistic: apply immediately, then save so other devices (and the AI) use the same settings
+  const saveSettings = (patch: Partial<DashboardData['settings']>) => {
+    setData(d => (d ? { ...d, settings: { ...d.settings, ...patch } } : d));
     fetch('/api/settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transferRules }),
+      body: JSON.stringify(patch),
     }).then(res => { if (!res.ok) throw new Error(); })
-      .catch(() => setError('Could not save your transfer settings. They will reset when you reload.'));
+      .catch(() => setError('Could not save your settings. They will reset when you reload.'));
+  };
+
+  // Optimistic edit, then reload from the server so rules apply everywhere they should
+  const saveTxnEdit = async (txn: Txn, edit: TxnEdit) => {
+    const key = merchantKey(txn);
+    setData(d => d && {
+      ...d,
+      transactions: d.transactions.map(t => {
+        const affected = edit.applyToMerchant ? merchantKey(t) === key : t.transaction_id === txn.transaction_id;
+        if (!affected) return t;
+        return {
+          ...t,
+          ...('category' in edit && { user_category: edit.category ?? null }),
+          ...('name' in edit && { user_name: edit.name ?? null }),
+          ...(t.transaction_id === txn.transaction_id && 'notes' in edit && { notes: edit.notes ?? null }),
+          edited: edit.applyToMerchant ? 'rule' : ('category' in edit && edit.category == null && 'name' in edit && edit.name == null) ? null : 'manual',
+        };
+      }),
+    });
+    const res = await fetch(`/api/transactions/${encodeURIComponent(txn.transaction_id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(edit),
+    });
+    if (!res.ok) setError('Could not save that change.');
+    fetchData();
+  };
+
+  const deleteRule = async (rule: CategoryRule) => {
+    setData(d => d && { ...d, rules: d.rules.filter(r => r.id !== rule.id) });
+    const res = await fetch(`/api/rules/${rule.id}`, { method: 'DELETE' });
+    if (!res.ok) setError('Could not delete that rule.');
+    fetchData();
   };
 
   const goTo = (next: Tab, cat?: string) => {
+    if (next === 'spending') setSpendingView('activity');
     setTab(next);
     setCategory(cat ?? null);
     window.scrollTo({ top: 0 });
@@ -215,8 +261,53 @@ function Dashboard() {
 
               <h2 className="text-xl font-bold">{TABS.find(t => t.id === tab)?.label}</h2>
 
-              {tab === 'overview' && <Overview data={data} rules={txnRules} goTo={goTo} accountName={accountName} />}
-              {tab === 'spending' && <Spending data={data} rules={txnRules} accountName={accountName} category={category} setCategory={setCategory} onOpenTransfers={() => setTransfersOpen(true)} />}
+              {tab === 'overview' && (
+                <Overview
+                  data={data}
+                  rules={txnRules}
+                  recurring={recurring}
+                  goTo={goTo}
+                  onOpenRecurring={() => { goTo('spending'); setSpendingView('recurring'); }}
+                  onSelect={setSelectedTxn}
+                  accountName={accountName}
+                />
+              )}
+              {tab === 'spending' && (
+                <>
+                  <div className="inline-flex bg-slate-200/60 rounded-xl p-1">
+                    {(['activity', 'recurring'] as const).map(v => (
+                      <button
+                        key={v}
+                        onClick={() => setSpendingView(v)}
+                        className={cn(
+                          'px-4 py-1.5 rounded-lg text-sm font-semibold capitalize transition-colors',
+                          spendingView === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                        )}
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                  {spendingView === 'activity' ? (
+                    <Spending
+                      data={data}
+                      rules={txnRules}
+                      accountName={accountName}
+                      category={category}
+                      setCategory={setCategory}
+                      onOpenTransfers={() => setTransfersOpen(true)}
+                      onSelect={setSelectedTxn}
+                    />
+                  ) : (
+                    <Recurring
+                      items={recurring}
+                      dismissedCount={data.settings?.dismissedRecurring?.length ?? 0}
+                      onDismiss={key => saveSettings({ dismissedRecurring: [...(data.settings?.dismissedRecurring ?? []), key] })}
+                      onRestoreAll={() => saveSettings({ dismissedRecurring: [] })}
+                    />
+                  )}
+                </>
+              )}
               {tab === 'investments' && <Investments data={data} onLinkBrokerage={() => plaid.start('brokerage')} />}
               {tab === 'accounts' && <Accounts data={data} onChanged={load} />}
               {tab === 'assistant' && <Assistant messages={chat} setMessages={setChat} />}
@@ -231,7 +322,23 @@ function Dashboard() {
           onClose={() => setTransfersOpen(false)}
           transactions={data.transactions}
           txnRules={txnRules}
-          onChange={updateTransferRules}
+          onChange={(transferRules: TransferRules) => saveSettings({ transferRules })}
+          merchantRules={data.rules ?? []}
+          onDeleteRule={deleteRule}
+        />
+      )}
+
+      {data && (
+        <TransactionEditor
+          key={selectedTxn?.transaction_id ?? 'none'}
+          txn={selectedTxn}
+          rule={selectedTxn && selectedTxn.edited === 'rule'
+            ? data.rules?.find(r => r.merchant_key === merchantKey(selectedTxn)) ?? null
+            : null}
+          accountName={selectedTxn ? accountName(selectedTxn.account_id) : undefined}
+          onClose={() => setSelectedTxn(null)}
+          onSave={saveTxnEdit}
+          onDeleteRule={deleteRule}
         />
       )}
 

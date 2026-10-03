@@ -1,14 +1,16 @@
 'use client';
 import { useEffect } from 'react';
-import type { Transaction } from 'plaid';
-import { X } from 'lucide-react';
+import { Trash2, X } from 'lucide-react';
+import { categoryMeta, type CategoryRule, type Txn } from '@/lib/finance';
 import { TRANSFER_META, TRANSFER_TYPES, type TransferRules, type TransferType, type TxnRules } from '@/lib/transfers';
 import { Money, cn } from './ui';
 
-export function TransferSettings({ open, onClose, transactions, txnRules, onChange }: {
+export function TransferSettings({ open, onClose, transactions, txnRules, onChange, merchantRules, onDeleteRule }: {
+  merchantRules: CategoryRule[];
+  onDeleteRule: (rule: CategoryRule) => void;
   open: boolean;
   onClose: () => void;
-  transactions: Transaction[];
+  transactions: Txn[];
   txnRules: TxnRules;
   onChange: (rules: TransferRules) => void;
 }) {
@@ -45,13 +47,16 @@ export function TransferSettings({ open, onClose, transactions, txnRules, onChan
       <div className="relative bg-white w-full sm:max-w-lg max-h-[85dvh] flex flex-col rounded-t-3xl sm:rounded-3xl shadow-xl">
         <div className="flex items-start justify-between gap-3 p-5 border-b border-slate-100">
           <div>
-            <h2 id="transfer-settings-title" className="font-bold text-slate-900 text-lg">Transfers</h2>
-            <p className="text-sm text-slate-500 mt-0.5">Choose which transfers to hide from your transactions and whether they count as spending.</p>
+            <h2 id="transfer-settings-title" className="font-bold text-slate-900 text-lg">Rules</h2>
+            <p className="text-sm text-slate-500 mt-0.5">How Moneta treats transfers and specific merchants.</p>
           </div>
           <button onClick={onClose} aria-label="Close" className="p-2 -m-2 rounded-xl text-slate-500 hover:bg-slate-100"><X size={20} /></button>
         </div>
 
-        <ul className="overflow-y-auto divide-y divide-slate-100 pb-[env(safe-area-inset-bottom)]">
+        <div className="overflow-y-auto pb-[env(safe-area-inset-bottom)]">
+        <h3 className="px-5 pt-4 text-xs font-bold uppercase tracking-wider text-slate-500">Transfers</h3>
+        <p className="px-5 pt-1 text-xs text-slate-500">Hide transfers from your transactions and choose whether they count as spending.</p>
+        <ul className="divide-y divide-slate-100">
           {ordered.map(type => {
             const meta = TRANSFER_META[type];
             const Icon = meta.icon;
@@ -78,6 +83,32 @@ export function TransferSettings({ open, onClose, transactions, txnRules, onChan
             );
           })}
         </ul>
+
+        <h3 className="px-5 pt-5 text-xs font-bold uppercase tracking-wider text-slate-500 border-t border-slate-100">Merchant rules</h3>
+        {merchantRules.length === 0 ? (
+          <p className="px-5 pt-1 pb-6 text-xs text-slate-500">
+            None yet. Tap any transaction, change its category or name, and keep “Always do this” checked to create one.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-100 pb-2">
+            {merchantRules.map(r => (
+              <li key={r.id} className="flex items-center gap-3 px-5 py-3">
+                <div className="flex-1 min-w-0 text-sm">
+                  <p className="font-semibold text-slate-900 truncate">“{r.merchant_key}”</p>
+                  <p className="text-xs text-slate-500 truncate">
+                    {r.category && <>→ {categoryMeta(r.category).label}</>}
+                    {r.category && r.rename && ' · '}
+                    {r.rename && <>shown as “{r.rename}”</>}
+                  </p>
+                </div>
+                <button onClick={() => onDeleteRule(r)} aria-label={`Delete rule for ${r.merchant_key}`} className="p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50">
+                  <Trash2 size={16} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        </div>
       </div>
     </div>
   );

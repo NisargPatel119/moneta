@@ -7,28 +7,79 @@ if (!process.env.DATABASE_URL) {
 // neon() creates a standard sql tagged template function for executing queries
 export const sql = neon(process.env.DATABASE_URL);
 
-// Create tables on first use, so a fresh deploy needs no manual setup step
+// Create tables on first use (and add newer columns), so a fresh deploy or an upgrade
+// needs no manual setup step. Every statement is idempotent.
 let schemaReady: Promise<void> | null = null;
 
 export function ensureSchema() {
-  schemaReady ??= Promise.all([
-    sql`
-      CREATE TABLE IF NOT EXISTS plaid_items (
-        id SERIAL PRIMARY KEY,
-        access_token VARCHAR(255) NOT NULL,
-        item_id VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `,
-    // App preferences that should sync across devices (e.g. transfer rules)
-    sql`
-      CREATE TABLE IF NOT EXISTS app_settings (
-        key VARCHAR(100) PRIMARY KEY,
-        value JSONB NOT NULL,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `,
-  ]).then(() => undefined).catch(e => {
+  schemaReady ??= (async () => {
+    await Promise.all([
+      sql`
+        CREATE TABLE IF NOT EXISTS plaid_items (
+          id SERIAL PRIMARY KEY,
+          access_token VARCHAR(255) NOT NULL,
+          item_id VARCHAR(255) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `,
+      // App preferences that should sync across devices (e.g. transfer rules)
+      sql`
+        CREATE TABLE IF NOT EXISTS app_settings (
+          key VARCHAR(100) PRIMARY KEY,
+          value JSONB NOT NULL,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `,
+      // Transactions are stored so history outlives Plaid's window and edits persist.
+      // Dates are 'YYYY-MM-DD' text: they sort correctly and avoid time zone shifts.
+      sql`
+        CREATE TABLE IF NOT EXISTS transactions (
+          transaction_id TEXT PRIMARY KEY,
+          item_id TEXT NOT NULL,
+          account_id TEXT NOT NULL,
+          date TEXT NOT NULL,
+          amount DOUBLE PRECISION NOT NULL,
+          name TEXT NOT NULL,
+          merchant_name TEXT,
+          pending BOOLEAN NOT NULL DEFAULT FALSE,
+          pending_transaction_id TEXT,
+          logo_url TEXT,
+          pfc_primary TEXT,
+          pfc_detailed TEXT,
+          user_category TEXT,
+          user_name TEXT,
+          notes TEXT,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `,
+      // One balance per account per day, for net worth over time
+      sql`
+        CREATE TABLE IF NOT EXISTS account_balances (
+          date TEXT NOT NULL,
+          account_id TEXT NOT NULL,
+          item_id TEXT NOT NULL,
+          type TEXT,
+          current DOUBLE PRECISION,
+          PRIMARY KEY (date, account_id)
+        )
+      `,
+      // "Always categorize <merchant> as <category>" rules, created by editing a transaction
+      sql`
+        CREATE TABLE IF NOT EXISTS category_rules (
+          id SERIAL PRIMARY KEY,
+          merchant_key TEXT NOT NULL UNIQUE,
+          category TEXT,
+          rename TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `,
+    ]);
+    await Promise.all([
+      sql`ALTER TABLE plaid_items ADD COLUMN IF NOT EXISTS sync_cursor TEXT`,
+      sql`ALTER TABLE plaid_items ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ`,
+      sql`CREATE INDEX IF NOT EXISTS transactions_date_idx ON transactions (date)`,
+    ]);
+  })().catch(e => {
     schemaReady = null; // retry on the next request
     throw e;
   });

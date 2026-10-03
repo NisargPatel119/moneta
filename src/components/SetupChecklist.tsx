@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Circle } from 'lucide-react';
 
-type Status = { database: boolean; plaid: boolean; plaidEnv: string; plaidRedirect: boolean; ai: boolean };
+type Status = { database: boolean; plaid: boolean; plaidEnv: string; plaidRedirect: boolean; ai: boolean; cron: boolean };
 
 // Shows which environment variables are configured, so a new self-hoster knows what's left
 export function SetupChecklist() {
@@ -18,6 +18,7 @@ export function SetupChecklist() {
     { ok: status.database, label: 'Database', hint: 'DATABASE_URL (free Neon Postgres)', required: true },
     { ok: status.plaid, label: 'Plaid', hint: `PLAID_CLIENT_ID + PLAID_SECRET · environment: ${status.plaidEnv}`, required: true },
     { ok: status.ai, label: 'AI assistant', hint: 'GROQ_API_KEY (free, optional)', required: false },
+    { ok: status.cron, label: 'Daily sync', hint: 'CRON_SECRET (optional, keeps history building when the app is closed)', required: false },
     { ok: status.plaidRedirect, label: 'Phone OAuth redirect', hint: 'PLAID_REDIRECT_URI (optional, helps big banks on mobile)', required: false },
   ];
 

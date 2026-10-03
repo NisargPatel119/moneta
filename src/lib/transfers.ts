@@ -1,4 +1,4 @@
-import type { Transaction } from 'plaid';
+import type { Txn } from './finance';
 import {
   ArrowLeftRight, Banknote, CalendarClock, CreditCard, Home, Landmark, LineChart, PiggyBank, Repeat, Send,
   type LucideIcon,
@@ -58,10 +58,12 @@ export function sanitizeTransferRules(input: unknown): TransferRules {
 const TRANSFER_PRIMARIES = new Set(['TRANSFER_IN', 'TRANSFER_OUT', 'LOAN_PAYMENTS']);
 
 // Plaid's detailed personal finance category → our transfer type
-function typeFromCategory(t: Transaction): TransferType | null {
-  const primary = t.personal_finance_category?.primary;
+function typeFromCategory(t: Txn): TransferType | null {
+  // A category the user picked wins over Plaid's; Plaid's detail only applies to Plaid's category
+  const plaidPrimary = t.personal_finance_category?.primary;
+  const primary = t.user_category ?? plaidPrimary;
   if (!primary || !TRANSFER_PRIMARIES.has(primary)) return null;
-  const detailed = t.personal_finance_category?.detailed ?? '';
+  const detailed = primary === plaidPrimary ? (t.personal_finance_category?.detailed ?? '') : '';
   if (detailed.endsWith('CREDIT_CARD_PAYMENT')) return 'credit_card';
   if (detailed.endsWith('MORTGAGE_PAYMENT')) return 'mortgage';
   if (detailed.endsWith('_BNPL')) return 'bnpl';
@@ -79,7 +81,7 @@ const DAY_MS = 86_400_000;
 // Pairs an outflow with an equal inflow a few days apart: between two linked accounts, or a
 // round trip within one account. Both sides must be transfer-like, so a $20 lunch never pairs
 // with a $20 deposit.
-export function detectInternalTransfers(transactions: Transaction[]) {
+export function detectInternalTransfers(transactions: Txn[]) {
   const candidates = transactions.filter(t => typeFromCategory(t) !== null);
   const outs = candidates.filter(t => t.amount > 0).sort((a, b) => a.date.localeCompare(b.date));
   const ins = candidates.filter(t => t.amount < 0);
@@ -87,7 +89,7 @@ export function detectInternalTransfers(transactions: Transaction[]) {
 
   for (const out of outs) {
     const outDay = Date.parse(out.date);
-    let best: Transaction | null = null;
+    let best: Txn | null = null;
     let bestGap = Infinity;
     for (const inflow of ins) {
       if (matched.has(inflow.transaction_id)) continue;
@@ -108,19 +110,19 @@ export function detectInternalTransfers(transactions: Transaction[]) {
 
 export type TxnRules = {
   /** Transfer type, or null for a regular purchase/income */
-  kind: (t: Transaction) => TransferType | null;
+  kind: (t: Txn) => TransferType | null;
   /** Money out that should count toward spending totals */
-  isSpending: (t: Transaction) => boolean;
+  isSpending: (t: Txn) => boolean;
   /** Hidden from transaction lists by the user's settings */
-  isHidden: (t: Transaction) => boolean;
+  isHidden: (t: Txn) => boolean;
   /** Key used to group spending: a Plaid category, or "xfer:<type>" for transfers */
-  groupKey: (t: Transaction) => string;
+  groupKey: (t: Txn) => string;
   rules: TransferRules;
 };
 
-export function makeTxnRules(transactions: Transaction[], rules: TransferRules): TxnRules {
+export function makeTxnRules(transactions: Txn[], rules: TransferRules): TxnRules {
   const internal = detectInternalTransfers(transactions);
-  const kind = (t: Transaction): TransferType | null =>
+  const kind = (t: Txn): TransferType | null =>
     internal.has(t.transaction_id) ? 'internal' : typeFromCategory(t);
 
   return {
@@ -130,7 +132,7 @@ export function makeTxnRules(transactions: Transaction[], rules: TransferRules):
       if (t.amount <= 0) return false;
       const k = kind(t);
       if (k) return rules[k].countAsSpending;
-      return t.personal_finance_category?.primary !== 'INCOME';
+      return (t.user_category ?? t.personal_finance_category?.primary) !== 'INCOME';
     },
     isHidden: t => {
       const k = kind(t);
@@ -138,7 +140,7 @@ export function makeTxnRules(transactions: Transaction[], rules: TransferRules):
     },
     groupKey: t => {
       const k = kind(t);
-      return k ? `xfer:${k}` : (t.personal_finance_category?.primary ?? 'OTHER');
+      return k ? `xfer:${k}` : (t.user_category ?? t.personal_finance_category?.primary ?? 'OTHER');
     },
   };
 }

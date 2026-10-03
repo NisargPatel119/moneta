@@ -27,7 +27,12 @@ So Moneta is money, memory, and good advice in one name. That's what this app tr
 ## Features
 
 - **Net worth at a glance:** assets, liabilities, and how your money is split between cash and investments.
-- **Spending insights:** month-to-date spending vs. the same point last month, spending by category, a daily spending-pace chart, and searchable transactions. Transfers and card payments aren't double counted as spending.
+- **Net worth over time:** Moneta records your balances every day and charts your net worth over 1 month, 3 months, a year, or all time.
+- **Spending insights:** month-to-date spending vs. the same point last month, spending by category, a daily spending-pace chart, and searchable transactions.
+- **Your history, kept:** transactions are stored in your own database, so history keeps growing past what your bank shares, and your edits stick.
+- **Automatic categories you can edit:** tap any transaction to rename it, recategorize it, or add a note. Tick "Always do this" and Moneta creates a merchant rule that applies to past and future transactions.
+- **Smart transfers:** money moving between your own accounts is matched and hidden automatically. Choose which kinds of transfers (card payments, savings, P2P, buy now pay later, mortgage…) to hide and which to count as spending.
+- **Recurring & subscriptions:** bills, subscriptions, and paychecks are detected automatically, with next charge dates, price-increase alerts, and a bills calendar.
 - **Investments:** holdings across all your brokerages, combined by ticker, with allocation (stocks, ETFs, funds, bonds, cash), gain/loss, and portfolio weight.
 - **Accounts:** balances grouped by type, credit card utilization, and connect/disconnect controls.
 - **Ask AI:** chat with an AI model about your own data: *"Where did my money go last month?"*, *"Do I have recurring subscriptions?"*, *"Is my portfolio concentrated?"*
@@ -82,6 +87,7 @@ Create a key at [console.groq.com/keys](https://console.groq.com/keys). For extr
    | `DATABASE_URL` | ✅ | Neon connection string |
    | `GROQ_API_KEY` | | Enables the Ask AI tab |
    | `GROQ_MODEL` | | Override the AI model (default `openai/gpt-oss-120b`) |
+   | `CRON_SECRET` | | Any long random string. Turns on the daily background sync |
    | `PLAID_REDIRECT_URI` | | `https://<your-app>.vercel.app/oauth`, see [Phone + big banks](#phone--big-banks) |
 
 3. Click **Deploy**.
@@ -123,18 +129,18 @@ Open [http://localhost:3000](http://localhost:3000) and sign in with your `APP_P
 ## Security & privacy
 
 - **One user, one password.** Moneta is designed for a single person (or household) per deployment. Every page and API route requires signing in. Sessions are signed, HTTP-only cookies that last 30 days, and changing `APP_PASSWORD` signs out every device.
-- **Your data stays in your accounts.** Plaid access tokens are stored in *your* Neon database. Transactions and balances are fetched from Plaid on demand and aren't copied anywhere else. Keep `DATABASE_URL` and your Plaid secret private.
+- **Your data stays in your accounts.** Plaid access tokens, transactions, and daily balances are stored in *your* Neon database and nowhere else. Keep `DATABASE_URL`, your Plaid secret, and `CRON_SECRET` private.
 - **AI is opt-in.** If you set `GROQ_API_KEY`, each question sends a summary of your accounts, holdings, and recent transactions to Groq to generate the answer. Turn on Zero Data Retention in Groq, or leave the key unset to disable AI entirely.
-- **Disconnect anytime.** *Accounts → Connections → Disconnect* revokes the connection at Plaid and deletes its token from your database.
+- **Disconnect anytime.** *Accounts → Connections → Disconnect* revokes the connection at Plaid and deletes its token, transactions, and balance history from your database.
 
 ## Limitations
 
 Moneta is young. Compared with paid apps, it currently doesn't have:
 
-- Budgets, savings goals, or bill reminders
-- Editing or recategorizing transactions, or custom rules
-- Importing history from other apps (Plaid provides about the last 90 days)
-- Net worth history over time
+- Budgets or savings goals
+- Splitting a transaction across categories
+- Importing history from other apps. Moneta keeps everything from the day you connect, plus whatever history your bank shares through Plaid: up to 2 years for new connections, often 90 days for older ones
+- Investment performance over time
 - Multiple users or shared household logins
 - Manual accounts (house, car, crypto wallets)
 
@@ -144,7 +150,8 @@ Contributions are welcome. See below.
 
 - **Next.js** (App Router) on Vercel; **Tailwind CSS** for styling; **Recharts** for charts.
 - **Plaid** for bank and brokerage data: `/accounts/get` (balances), `/transactions/get` (90 days), `/investments/holdings/get`.
-- **Neon Postgres** stores only Plaid access tokens (`plaid_items` table).
+- **Neon Postgres** stores your Plaid access tokens, synced transactions (with your edits), daily balances, merchant rules, and settings. Tables are created automatically.
+- **Plaid `/transactions/sync`** pulls only what changed since the last sync. The dashboard syncs when data is older than 10 minutes, and **Vercel Cron** (`vercel.json`) syncs daily at 10:00 UTC.
 - **Groq** (OpenAI-compatible API) answers chat questions from a compact text snapshot of your data.
 
 ```
@@ -154,13 +161,20 @@ src/
     login/              Password login page + server actions
     oauth/              Plaid OAuth redirect handler (phones + big banks)
     api/
-      dashboard/        All financial data in one call
+      dashboard/        All financial data in one call (syncs if stale)
+      transactions/     Edit a transaction (category, name, note, merchant rule)
+      rules/            Delete a merchant rule
+      settings/         Transfer rules, dismissed recurring items
+      cron/sync/        Daily background sync (Vercel Cron)
       chat/             AI assistant (streams from Groq)
       plaid/            Link token, token exchange, disconnect
       setup-status/     Which env vars are configured (booleans only)
   components/           Overview, Spending, Investments, Accounts, Assistant…
   lib/
     plaidData.ts        Fetches + combines data from every connected bank
+    transactionStore.ts Plaid sync → Postgres, balance snapshots, net worth history
+    transfers.ts        Internal transfer matching + per-type transfer rules
+    recurring.ts        Recurring bill/subscription/income detection
     financialContext.ts Builds the AI's data snapshot
     finance.ts          Categories, formatting, spending math
     session.ts          Signed session cookies

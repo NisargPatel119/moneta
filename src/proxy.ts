@@ -4,6 +4,12 @@ import { SESSION_COOKIE, verifySessionToken } from '@/lib/session';
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // Vercel Cron can't sign in; the cron route checks CRON_SECRET itself
+  if (pathname.startsWith('/api/cron/')) {
+    return NextResponse.next();
+  }
+
   const isLoggedIn = await verifySessionToken(req.cookies.get(SESSION_COOKIE)?.value);
 
   if (pathname === '/login') {

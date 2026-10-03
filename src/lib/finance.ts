@@ -1,4 +1,4 @@
-import type { AccountBase, Transaction } from 'plaid';
+import type { AccountBase } from 'plaid';
 import type { HoldingRow } from './plaidData';
 import { TRANSFER_META, type TransferRules, type TransferType, type TxnRules } from './transfers';
 import {
@@ -9,6 +9,30 @@ import {
 
 export type Account = AccountBase & { institution: string; item_id: string };
 
+// A stored transaction, with the user's edits applied. Plaid convention: positive amount = money out.
+export type Txn = {
+  transaction_id: string;
+  account_id: string;
+  date: string;
+  amount: number;
+  name: string;
+  merchant_name: string | null;
+  pending: boolean;
+  logo_url: string | null;
+  personal_finance_category: { primary: string; detailed: string } | null;
+  /** Category chosen by the user, or by one of their merchant rules */
+  user_category: string | null;
+  /** Display name chosen by the user, or by a merchant rule */
+  user_name: string | null;
+  notes: string | null;
+  /** How the user's edits were applied, if any */
+  edited: 'manual' | 'rule' | null;
+};
+
+export type CategoryRule = { id: number; merchant_key: string; category: string | null; rename: string | null };
+
+export type NetWorthPoint = { date: string; assets: number; liabilities: number; netWorth: number };
+
 export type DashboardIssue = { item_id: string; code: string; message: string };
 
 export type DashboardData = {
@@ -17,10 +41,12 @@ export type DashboardData = {
   assets: number;
   liabilities: number;
   accounts: Account[];
-  transactions: Transaction[];
+  transactions: Txn[];
   holdings: HoldingRow[];
   issues: DashboardIssue[];
-  settings: { transferRules: TransferRules };
+  settings: { transferRules: TransferRules; dismissedRecurring: string[] };
+  rules: CategoryRule[];
+  history: NetWorthPoint[];
   fetchedAt?: string;
 };
 
@@ -100,8 +126,8 @@ export const CATEGORIES: Record<string, CategoryMeta> = {
 
 const FALLBACK: CategoryMeta = { label: 'Other', icon: CircleDollarSign, color: '#94a3b8' };
 
-export function categoryOf(t: Transaction) {
-  return t.personal_finance_category?.primary ?? 'OTHER';
+export function categoryOf(t: Txn) {
+  return t.user_category ?? t.personal_finance_category?.primary ?? 'OTHER';
 }
 
 // Accepts a Plaid category or a transfer group key ("xfer:<type>", see transfers.ts)
@@ -115,13 +141,28 @@ export function categoryMeta(key: string): CategoryMeta {
 
 // Plaid convention: positive amount = money leaving the account.
 // Whether money out counts as spending depends on the user's transfer rules (see transfers.ts).
-export function isIncome(t: Transaction) {
+export function isIncome(t: Txn) {
   return t.amount < 0 && categoryOf(t) === 'INCOME';
 }
 
-export function displayName(t: Transaction) {
-  return t.merchant_name || t.name;
+export function displayName(t: Txn) {
+  return t.user_name || t.merchant_name || t.name;
 }
+
+// Groups transactions from the same merchant, for rules and recurring detection:
+// "Netflix", "NETFLIX.COM 866-579" and "Netflix #4412" all become "netflix".
+export function merchantKey(t: Pick<Txn, 'merchant_name' | 'name'>) {
+  const base = (t.merchant_name || t.name).toLowerCase();
+  const words = base
+    .replace(/\.(com|net|org|co)\b/g, ' ')
+    .replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 1 && !['inc', 'llc', 'the', 'payment', 'pymt', 'autopay', 'pos', 'debit', 'purchase'].includes(w));
+  return words.slice(0, 3).join(' ') || base.trim();
+}
+
+// Categories a user can pick when editing a transaction
+export const EDITABLE_CATEGORIES = Object.keys(CATEGORIES);
 
 // ---------- Accounts ----------
 
@@ -164,19 +205,19 @@ export function monthRange(offset = 0) {
   return { start: dayKey(start), end: dayKey(end) };
 }
 
-export function inRange(t: Transaction, range: { start: string; end: string }) {
+export function inRange(t: Txn, range: { start: string; end: string }) {
   return t.date >= range.start && t.date <= range.end;
 }
 
-export function sumSpending(txns: Transaction[], rules: TxnRules) {
+export function sumSpending(txns: Txn[], rules: TxnRules) {
   return txns.reduce((sum, t) => (rules.isSpending(t) ? sum + t.amount : sum), 0);
 }
 
-export function sumIncome(txns: Transaction[]) {
+export function sumIncome(txns: Txn[]) {
   return txns.reduce((sum, t) => (isIncome(t) ? sum - t.amount : sum), 0);
 }
 
-export function spendingByCategory(txns: Transaction[], rules: TxnRules) {
+export function spendingByCategory(txns: Txn[], rules: TxnRules) {
   const totals = new Map<string, number>();
   for (const t of txns) {
     if (!rules.isSpending(t)) continue;
@@ -189,7 +230,7 @@ export function spendingByCategory(txns: Transaction[], rules: TxnRules) {
 }
 
 // Spending through the same day-of-month last month, for a fair "pace" comparison
-export function lastMonthSameDaySpending(txns: Transaction[], rules: TxnRules) {
+export function lastMonthSameDaySpending(txns: Txn[], rules: TxnRules) {
   const today = new Date();
   const last = monthRange(-1);
   const lastMonthEnd = parseDay(last.end);

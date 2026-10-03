@@ -1,10 +1,9 @@
 'use client';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Type } from 'lucide-react';
-import type { Transaction } from 'plaid';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { categoryMeta, categoryOf, formatMoney } from '@/lib/finance';
+import { categoryMeta, categoryOf, formatMoney, type Txn } from '@/lib/finance';
 
 export function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
@@ -90,7 +89,7 @@ export function Skeleton({ className }: { className?: string }) {
 
 // ---------- Transaction avatar: merchant logo, falling back to a category icon ----------
 
-export function TransactionIcon({ t, categoryKey }: { t: Transaction; categoryKey?: string }) {
+export function TransactionIcon({ t, categoryKey }: { t: Txn; categoryKey?: string }) {
   const meta = categoryMeta(categoryKey ?? categoryOf(t));
   const Icon = meta.icon;
   if (t.logo_url) {
