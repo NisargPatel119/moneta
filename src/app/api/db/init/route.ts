@@ -1,18 +1,13 @@
 import { NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { errorMessage } from '@/lib/errors';
+import { ensureSchema } from '@/lib/db';
 
+// Optional: tables are also created automatically on first use
 export async function GET() {
   try {
-    await sql`
-      CREATE TABLE IF NOT EXISTS plaid_items (
-        id SERIAL PRIMARY KEY,
-        access_token VARCHAR(255) NOT NULL,
-        item_id VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `;
+    await ensureSchema();
     return NextResponse.json({ message: 'Database initialized successfully!' });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }

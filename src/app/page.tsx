@@ -11,6 +11,7 @@ import { Spending } from '@/components/Spending';
 import { Accounts } from '@/components/Accounts';
 import { Investments } from '@/components/Investments';
 import { Assistant, type ChatMessage } from '@/components/Assistant';
+import { SetupChecklist } from '@/components/SetupChecklist';
 import { Card, PrivacyProvider, Skeleton, TextSizeControl, cn, usePrivacy } from '@/components/ui';
 import { type DashboardData, timeAgo } from '@/lib/finance';
 
@@ -35,27 +36,32 @@ export default function Home() {
 function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshing, setRefreshing] = useState(true);
   const [tab, setTab] = useState<Tab>('overview');
   const [category, setCategory] = useState<string | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [, forceTick] = useState(0);
   const { hidden, toggle } = usePrivacy();
 
-  const load = useCallback(() => {
-    setRefreshing(true);
-    setError(null);
+  // Only sets state in callbacks, so it can run straight from the mount effect
+  const fetchData = useCallback(() => {
     fetch('/api/dashboard')
       .then(async res => {
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || 'Something went wrong');
         setData(body);
+        setError(null);
       })
       .catch(e => setError(e.message))
       .finally(() => setRefreshing(false));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const load = useCallback(() => {
+    setRefreshing(true);
+    fetchData();
+  }, [fetchData]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   // Keep the "Updated x min ago" label fresh
   useEffect(() => {
@@ -114,7 +120,7 @@ function Dashboard() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 md:py-10 pb-28 md:pb-10">
-        <LinkStatus status={plaid.status} onClose={plaid.clearStatus} />
+        <LinkStatus status={plaid.status} error={plaid.error} onClose={plaid.clearStatus} />
 
         {initialLoading ? (
           <LoadingSkeleton />
@@ -124,6 +130,7 @@ function Dashboard() {
             <h2 className="text-lg font-bold mt-4">Couldn&apos;t load your data</h2>
             <p className="text-slate-500 mt-2 text-sm">{error}</p>
             <button onClick={load} className="mt-6 bg-blue-600 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-blue-700">Try again</button>
+            <SetupChecklist />
           </Card>
         ) : !data?.linked ? (
           <Card className="p-10 sm:p-12 text-center max-w-lg mx-auto mt-6">
@@ -148,6 +155,7 @@ function Dashboard() {
             >
               or link a brokerage / retirement account
             </button>
+            <SetupChecklist />
           </Card>
         ) : (
           <div className="flex gap-10">
@@ -191,7 +199,7 @@ function Dashboard() {
               {tab === 'overview' && <Overview data={data} goTo={goTo} accountName={accountName} />}
               {tab === 'spending' && <Spending data={data} accountName={accountName} category={category} setCategory={setCategory} />}
               {tab === 'investments' && <Investments data={data} onLinkBrokerage={() => plaid.start('brokerage')} />}
-              {tab === 'accounts' && <Accounts data={data} />}
+              {tab === 'accounts' && <Accounts data={data} onChanged={load} />}
               {tab === 'assistant' && <Assistant messages={chat} setMessages={setChat} />}
             </section>
           </div>
@@ -288,10 +296,10 @@ function Banner({ tone, children, action }: { tone: 'warn' | 'ok'; children: Rea
   );
 }
 
-function LinkStatus({ status, onClose }: { status: string; onClose: () => void }) {
+function LinkStatus({ status, error, onClose }: { status: string; error: string | null; onClose: () => void }) {
   if (status === 'idle') return null;
   if (status === 'preparing') return null;
-  const text = status === 'linking' ? 'Connecting your account…' : status === 'linked' ? 'Account linked! Loading your new data…' : 'Failed to link the account. Please try again.';
+  const text = status === 'linking' ? 'Connecting your account…' : status === 'linked' ? 'Account linked! Loading your new data…' : error || 'Failed to link the account. Please try again.';
   return (
     <div className="mb-5">
       <Banner tone={status === 'error' ? 'warn' : 'ok'} action={<button onClick={onClose} aria-label="Dismiss"><X size={16} /></button>}>

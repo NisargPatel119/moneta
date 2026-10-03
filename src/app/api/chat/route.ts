@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { errorMessage } from '@/lib/errors';
 import { getFinancialData } from '@/lib/plaidData';
 import { buildFinancialContext } from '@/lib/financialContext';
 
@@ -17,6 +18,11 @@ Guidelines:
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
+function isChatMessage(m: unknown): m is ChatMessage {
+  const msg = m as Partial<ChatMessage> | null;
+  return (msg?.role === 'user' || msg?.role === 'assistant') && typeof msg.content === 'string';
+}
+
 export async function POST(request: Request) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
@@ -25,10 +31,10 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => null);
   const messages: ChatMessage[] = Array.isArray(body?.messages)
-    ? body.messages
-      .filter((m: any) => (m?.role === 'user' || m?.role === 'assistant') && typeof m.content === 'string')
+    ? (body.messages as unknown[])
+      .filter(isChatMessage)
       .slice(-MAX_HISTORY)
-      .map((m: ChatMessage) => ({ role: m.role, content: m.content.slice(0, 4000) }))
+      .map(m => ({ role: m.role, content: m.content.slice(0, 4000) }))
     : [];
   if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
     return NextResponse.json({ error: 'Send at least one user message.' }, { status: 400 });
@@ -37,8 +43,8 @@ export async function POST(request: Request) {
   let context: string;
   try {
     context = buildFinancialContext(await getFinancialData());
-  } catch (e: any) {
-    return NextResponse.json({ error: `Couldn't load your financial data: ${e.message}` }, { status: 500 });
+  } catch (e) {
+    return NextResponse.json({ error: `Couldn't load your financial data: ${errorMessage(e)}` }, { status: 500 });
   }
 
   const upstream = await fetch(GROQ_URL, {

@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Type } from 'lucide-react';
 import type { Transaction } from 'plaid';
 import { clsx } from 'clsx';
@@ -10,20 +10,43 @@ export function cn(...inputs: (string | undefined | null | false)[]) {
   return twMerge(clsx(inputs));
 }
 
+// ---------- Per-device preferences saved in localStorage ----------
+
+const prefListeners = new Set<() => void>();
+const prefFallback = new Map<string, string>(); // used when storage is blocked (e.g. some private modes)
+
+function subscribePrefs(onChange: () => void) {
+  prefListeners.add(onChange);
+  window.addEventListener('storage', onChange);
+  return () => {
+    prefListeners.delete(onChange);
+    window.removeEventListener('storage', onChange);
+  };
+}
+
+function readPref(key: string) {
+  try { return localStorage.getItem(key) ?? prefFallback.get(key) ?? null; } catch { return prefFallback.get(key) ?? null; }
+}
+
+// Server render (and hydration) sees null, then the saved value, so there's no hydration mismatch
+export function usePref(key: string): [string | null, (value: string) => void] {
+  const value = useSyncExternalStore(subscribePrefs, () => readPref(key), () => null);
+  const set = useCallback((next: string) => {
+    prefFallback.set(key, next);
+    try { localStorage.setItem(key, next); } catch {}
+    prefListeners.forEach(l => l());
+  }, [key]);
+  return [value, set];
+}
+
 // ---------- Privacy mode: blur every amount on screen ----------
 
 const PrivacyContext = createContext({ hidden: false, toggle: () => {} });
 
 export function PrivacyProvider({ children }: { children: ReactNode }) {
-  const [hidden, setHidden] = useState(false);
-  // Read the saved preference after mount so server and client render the same HTML
-  useEffect(() => {
-    try { if (localStorage.getItem('ws_hide_amounts') === '1') setHidden(true); } catch {}
-  }, []);
-  const toggle = () => setHidden(h => {
-    try { localStorage.setItem('ws_hide_amounts', h ? '0' : '1'); } catch {}
-    return !h;
-  });
+  const [saved, setSaved] = usePref('ws_hide_amounts');
+  const hidden = saved === '1';
+  const toggle = () => setSaved(hidden ? '0' : '1');
   return <PrivacyContext.Provider value={{ hidden, toggle }}>{children}</PrivacyContext.Provider>;
 }
 
@@ -93,15 +116,10 @@ const TEXT_SIZE_MAX = 19;
 
 export function TextSizeControl() {
   const [open, setOpen] = useState(false);
-  const [size, setSize] = useState(TEXT_SIZE_DEFAULT);
+  const [saved, setSaved] = usePref(TEXT_SIZE_KEY);
+  const parsed = Number(saved);
+  const size = parsed >= TEXT_SIZE_MIN && parsed <= TEXT_SIZE_MAX ? parsed : TEXT_SIZE_DEFAULT;
   const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    try {
-      const saved = Number(localStorage.getItem(TEXT_SIZE_KEY));
-      if (saved >= TEXT_SIZE_MIN && saved <= TEXT_SIZE_MAX) setSize(saved);
-    } catch {}
-  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -110,10 +128,10 @@ export function TextSizeControl() {
     return () => document.removeEventListener('pointerdown', close);
   }, [open]);
 
+  // The <head> script in layout.tsx applies the saved size on page load; this handles live changes
   const apply = (next: number) => {
-    setSize(next);
     document.documentElement.style.fontSize = `${next}px`;
-    try { localStorage.setItem(TEXT_SIZE_KEY, String(next)); } catch {}
+    setSaved(String(next));
   };
 
   return (

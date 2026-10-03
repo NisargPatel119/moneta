@@ -6,7 +6,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-export type Account = AccountBase & { institution: string };
+export type Account = AccountBase & { institution: string; item_id: string };
 
 export type DashboardIssue = { item_id: string; code: string; message: string };
 

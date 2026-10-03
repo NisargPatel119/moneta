@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
+import { describeError, errorMessage, plaidErrorBody } from '@/lib/errors';
 import { plaidClient } from '@/lib/plaid';
-import { sql } from '@/lib/db';
+import { ensureSchema, sql } from '@/lib/db';
+import { clearFinancialCache } from '@/lib/plaidData';
 
 export async function POST(request: Request) {
   try {
@@ -15,17 +17,16 @@ export async function POST(request: Request) {
     const itemId = response.data.item_id;
 
     // 2. Save it securely to our Neon Postgres database
+    await ensureSchema();
     await sql`
       INSERT INTO plaid_items (access_token, item_id)
       VALUES (${accessToken}, ${itemId})
     `;
 
+    clearFinancialCache();
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    console.error('Error exchanging public token:', error.response?.data || error.message);
-    return NextResponse.json(
-      { error: error.response?.data?.error_message || error.message }, 
-      { status: 500 }
-    );
+  } catch (error) {
+    console.error('Error exchanging public token:', plaidErrorBody(error) || errorMessage(error));
+    return NextResponse.json({ error: describeError(error) }, { status: 500 });
   }
 }

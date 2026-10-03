@@ -1,5 +1,6 @@
 import type { AccountBase, Transaction } from 'plaid';
-import { sql } from '@/lib/db';
+import { errorMessage, plaidErrorBody } from '@/lib/errors';
+import { ensureSchema, sql } from '@/lib/db';
 import { plaidClient } from '@/lib/plaid';
 
 // How far back to pull transactions. 90 days lets the UI compare this month to last month.
@@ -28,7 +29,7 @@ export type FinancialData = {
   netWorth: number;
   assets: number;
   liabilities: number;
-  accounts: (AccountBase & { institution: string })[];
+  accounts: (AccountBase & { institution: string; item_id: string })[];
   transactions: Transaction[];
   holdings: HoldingRow[];
   issues: Issue[];
@@ -39,9 +40,14 @@ export type FinancialData = {
 let cache: { at: number; data: FinancialData } | null = null;
 const CACHE_MS = 60_000;
 
+export function clearFinancialCache() {
+  cache = null;
+}
+
 export async function getFinancialData({ fresh = false } = {}): Promise<FinancialData> {
   if (!fresh && cache && Date.now() - cache.at < CACHE_MS) return cache.data;
 
+  await ensureSchema();
   const items = await sql`SELECT access_token, item_id FROM plaid_items`;
   if (items.length === 0) {
     return { linked: false, netWorth: 0, assets: 0, liabilities: 0, accounts: [], transactions: [], holdings: [], issues: [], fetchedAt: new Date().toISOString() };
@@ -70,7 +76,7 @@ export async function getFinancialData({ fresh = false } = {}): Promise<Financia
 
     const institution = accountsRes?.data.item.institution_name ?? 'Bank';
     return {
-      accounts: (accountsRes?.data.accounts ?? []).map(a => ({ ...a, institution })),
+      accounts: (accountsRes?.data.accounts ?? []).map(a => ({ ...a, institution, item_id: itemId })),
       transactions: txns,
       holdings,
       // One banner per bank is enough
@@ -109,9 +115,9 @@ export async function getFinancialData({ fresh = false } = {}): Promise<Financia
   return data;
 }
 
-function toIssue(itemId: string, e: any): Issue {
-  const err = e.response?.data;
-  console.error('Plaid error:', err || e.message);
+function toIssue(itemId: string, e: unknown): Issue {
+  const err = plaidErrorBody(e);
+  console.error('Plaid error:', err || errorMessage(e));
   return {
     item_id: itemId,
     code: err?.error_code ?? 'UNKNOWN',
@@ -119,9 +125,9 @@ function toIssue(itemId: string, e: any): Issue {
   };
 }
 
-function noteIssue(issues: Issue[], itemId: string, e: any) {
-  const code = e.response?.data?.error_code;
-  if (UNSUPPORTED.has(code)) return;
+function noteIssue(issues: Issue[], itemId: string, e: unknown) {
+  const code = plaidErrorBody(e)?.error_code;
+  if (code && UNSUPPORTED.has(code)) return;
   issues.push(toIssue(itemId, e));
 }
 

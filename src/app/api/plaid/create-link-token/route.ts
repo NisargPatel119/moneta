@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { describeError, errorMessage, plaidErrorBody } from '@/lib/errors';
 import { plaidClient } from '@/lib/plaid';
 import { CountryCode, Products } from 'plaid';
 
@@ -25,13 +26,13 @@ export async function POST(request: Request) {
       ...CONFIG[kind],
       country_codes: [CountryCode.Us],
       language: 'en',
+      // Banks that use OAuth (Chase, Capital One, …) send phone users back here after signing in.
+      // Must be HTTPS and listed under "Allowed redirect URIs" in the Plaid dashboard.
+      ...(process.env.PLAID_REDIRECT_URI ? { redirect_uri: process.env.PLAID_REDIRECT_URI } : {}),
     });
     return NextResponse.json(response.data);
-  } catch (error: any) {
-    console.error('Error creating link token:', error.response?.data || error.message);
-    return NextResponse.json(
-      { error: error.response?.data?.error_message || error.message },
-      { status: 500 }
-    );
+  } catch (error) {
+    console.error('Error creating link token:', plaidErrorBody(error) || errorMessage(error));
+    return NextResponse.json({ error: describeError(error) }, { status: 500 });
   }
 }

@@ -1,5 +1,6 @@
 'use client';
-import { Banknote, CreditCard, LineChart, Wallet, type LucideIcon } from 'lucide-react';
+import { useState } from 'react';
+import { Banknote, CreditCard, LineChart, Unlink, Wallet, type LucideIcon } from 'lucide-react';
 import { ACCOUNT_TYPE_LABELS, ACCOUNT_TYPE_ORDER, type Account, type DashboardData, isLiability } from '@/lib/finance';
 import { Card, Money, cn } from './ui';
 
@@ -10,7 +11,7 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   loan: Banknote,
 };
 
-export function Accounts({ data }: { data: DashboardData }) {
+export function Accounts({ data, onChanged }: { data: DashboardData; onChanged: () => void }) {
   const groups = ACCOUNT_TYPE_ORDER
     .map(type => {
       const accounts = data.accounts.filter(a => (a.type ?? 'other') === type);
@@ -42,7 +43,56 @@ export function Accounts({ data }: { data: DashboardData }) {
           </section>
         );
       })}
+
+      <Connections data={data} onChanged={onChanged} />
     </div>
+  );
+}
+
+// One row per linked institution (Plaid "Item"), with a way to disconnect it
+function Connections({ data, onChanged }: { data: DashboardData; onChanged: () => void }) {
+  const [removing, setRemoving] = useState<string | null>(null);
+  const connections = [...new Map(data.accounts.map(a => [a.item_id, a])).values()].map(a => ({
+    item_id: a.item_id,
+    institution: a.institution,
+    count: data.accounts.filter(x => x.item_id === a.item_id).length,
+  }));
+  if (connections.length === 0) return null;
+
+  async function remove(itemId: string, institution: string) {
+    if (!window.confirm(`Disconnect ${institution}? Its accounts will disappear from WealthSync. You can link it again later.`)) return;
+    setRemoving(itemId);
+    const res = await fetch('/api/plaid/remove-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_id: itemId }),
+    });
+    setRemoving(null);
+    if (res.ok) onChanged();
+    else window.alert('Could not disconnect. Please try again.');
+  }
+
+  return (
+    <section>
+      <h3 className="font-bold text-slate-800 mb-3 px-1">Connections</h3>
+      <Card className="divide-y divide-slate-100 overflow-hidden">
+        {connections.map(c => (
+          <div key={c.item_id} className="flex items-center justify-between gap-3 p-4 sm:p-5">
+            <div>
+              <p className="font-semibold text-slate-900">{c.institution}</p>
+              <p className="text-xs text-slate-500 font-medium">{c.count} account{c.count === 1 ? '' : 's'}</p>
+            </div>
+            <button
+              onClick={() => remove(c.item_id, c.institution)}
+              disabled={removing === c.item_id}
+              className="flex items-center gap-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 px-3 py-2 rounded-xl disabled:opacity-50"
+            >
+              <Unlink size={16} /> {removing === c.item_id ? 'Removing…' : 'Disconnect'}
+            </button>
+          </div>
+        ))}
+      </Card>
+    </section>
   );
 }
 
