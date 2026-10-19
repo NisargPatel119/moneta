@@ -73,12 +73,32 @@ export function ensureSchema() {
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `,
+      // Things Plaid can't see: a home, a car, crypto in a wallet, valuables…
+      // The value can drift by a yearly rate (a home appreciating, a car depreciating).
+      sql`
+        CREATE TABLE IF NOT EXISTS manual_assets (
+          id SERIAL PRIMARY KEY,
+          name TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          value DOUBLE PRECISION NOT NULL,
+          value_date TEXT NOT NULL,
+          annual_rate DOUBLE PRECISION,
+          notes TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `,
     ]);
     await Promise.all([
       sql`ALTER TABLE plaid_items ADD COLUMN IF NOT EXISTS sync_cursor TEXT`,
       sql`ALTER TABLE plaid_items ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ`,
+      // Remembered so a bank that stops responding can still be named ("Reconnect Chase")
+      sql`ALTER TABLE plaid_items ADD COLUMN IF NOT EXISTS institution_name TEXT`,
       sql`CREATE INDEX IF NOT EXISTS transactions_date_idx ON transactions (date)`,
+      // Review inbox. Rows that existed before this column count as reviewed (the default
+      // applies to them when the column is added); the next statement makes new rows unreviewed.
+      sql`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reviewed BOOLEAN NOT NULL DEFAULT TRUE`,
     ]);
+    await sql`ALTER TABLE transactions ALTER COLUMN reviewed SET DEFAULT FALSE`;
   })().catch(e => {
     schemaReady = null; // retry on the next request
     throw e;

@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { RotateCcw, X } from 'lucide-react';
+import { ChevronRight, RotateCcw, X } from 'lucide-react';
 import {
   CATEGORIES, EDITABLE_CATEGORIES, categoryMeta, friendlyDay, merchantKey, type CategoryRule, type Txn,
 } from '@/lib/finance';
@@ -14,7 +14,9 @@ export type TxnEdit = {
   applyToMerchant?: boolean;
 };
 
-export function TransactionEditor({ txn, rule, accountName, onClose, onSave, onDeleteRule }: {
+export function TransactionEditor({ txn, rule, accountName, onClose, onSave, onDeleteRule, onOpenMerchant }: {
+  /** Opens the merchant page: every transaction from this merchant */
+  onOpenMerchant: (txn: Txn) => void;
   txn: Txn | null;
   /** The merchant rule currently applied to this transaction, if any */
   rule: CategoryRule | null;
@@ -145,6 +147,14 @@ export function TransactionEditor({ txn, rule, accountName, onClose, onSave, onD
               </span>
             </label>
           )}
+
+          <button
+            onClick={() => onOpenMerchant(txn)}
+            className="w-full flex items-center justify-between gap-3 rounded-xl bg-sunken px-3.5 py-3 text-sm font-semibold text-ink hover:brightness-95"
+          >
+            <span className="truncate">See all from {name.trim() || bankName}</span>
+            <ChevronRight size={16} className="text-muted shrink-0" />
+          </button>
 
           {rule && (
             <div className="flex items-center justify-between gap-3 text-xs text-muted bg-sunken rounded-xl p-3">

@@ -1,5 +1,5 @@
 import type { FinancialData } from './plaidData';
-import { categoryMeta, displayName, inRange, monthRange, spendingByCategory, sumIncome, sumSpending, SECURITY_TYPE_LABELS } from './finance';
+import { ASSET_KIND_META, categoryMeta, displayName, inRange, monthRange, spendingByCategory, sumIncome, sumSpending, SECURITY_TYPE_LABELS } from './finance';
 import { TRANSFER_META, TRANSFER_TYPES, makeTxnRules } from './transfers';
 import { FREQUENCY_LABELS, detectRecurring } from './recurring';
 
@@ -27,6 +27,19 @@ export function buildFinancialContext(data: FinancialData) {
     accountNames.set(a.account_id, name);
     const limit = a.balances.limit ? `, limit ${money(a.balances.limit)}` : '';
     lines.push(`- ${name} (${a.institution}, ${a.type}/${a.subtype ?? '-'}): ${money(a.balances.current ?? 0)}${limit}`);
+  }
+
+  if (data.manualAssets.length > 0) {
+    lines.push('', '## Assets the user entered by hand (included in net worth)');
+    for (const a of data.manualAssets) {
+      const drift = a.annual_rate ? `, estimated with ${a.annual_rate > 0 ? '+' : ''}${a.annual_rate}%/yr since ${a.value_date}` : '';
+      lines.push(`- ${a.name} (${ASSET_KIND_META[a.kind].label}): ${money(a.value)}${drift}`);
+    }
+  }
+
+  const broken = data.connections.filter(c => c.status !== 'ok');
+  if (broken.length > 0) {
+    lines.push('', `Note: ${broken.map(c => c.institution).join(', ')} need${broken.length === 1 ? 's' : ''} reconnecting, so their data may be missing or stale.`);
   }
 
   const rules = makeTxnRules(data.transactions, data.settings.transferRules);

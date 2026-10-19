@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { usePlaidLink } from 'react-plaid-link';
-import { LINK_TOKEN_KEY, exchangePublicToken } from '@/components/usePlaidConnect';
+import { LINK_MODE_KEY, LINK_TOKEN_KEY, exchangePublicToken } from '@/components/usePlaidConnect';
 import { usePref } from '@/components/ui';
 
 const noopSubscribe = () => () => {};
@@ -18,8 +18,11 @@ export default function OAuthRedirectPage() {
 
   const onSuccess = useCallback(async (public_token: string) => {
     setMessage('Saving your account…');
-    const ok = await exchangePublicToken(public_token);
-    try { localStorage.removeItem(LINK_TOKEN_KEY); } catch {}
+    let update = false;
+    try { update = localStorage.getItem(LINK_MODE_KEY) === 'update'; } catch {}
+    // Reconnecting keeps the existing connection, so there's nothing to save
+    const ok = update || await exchangePublicToken(public_token);
+    try { localStorage.removeItem(LINK_TOKEN_KEY); localStorage.removeItem(LINK_MODE_KEY); } catch {}
     if (ok) window.location.replace('/');
     else setMessage('Saving the account failed. Please try again from the dashboard.');
   }, []);

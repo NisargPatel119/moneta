@@ -2,8 +2,8 @@ import type { AccountBase } from 'plaid';
 import type { HoldingRow } from './plaidData';
 import { TRANSFER_META, type TransferRules, type TransferType, type TxnRules } from './transfers';
 import {
-  ArrowLeftRight, Banknote, Briefcase, Car, Coffee, Film, HeartPulse, Home, Hammer,
-  Landmark, Plane, ReceiptText, Scissors, ShoppingBag, Wrench, CircleDollarSign,
+  ArrowLeftRight, Banknote, Bitcoin, Briefcase, Car, Coffee, Film, Gem, HeartPulse, Home, Hammer,
+  Landmark, Package, Plane, ReceiptText, Scissors, ShoppingBag, Wrench, CircleDollarSign,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -27,13 +27,94 @@ export type Txn = {
   notes: string | null;
   /** How the user's edits were applied, if any */
   edited: 'manual' | 'rule' | null;
+  /** Checked off in the review inbox (or edited) */
+  reviewed: boolean;
 };
 
 export type CategoryRule = { id: number; merchant_key: string; category: string | null; rename: string | null };
 
-export type NetWorthPoint = { date: string; assets: number; liabilities: number; netWorth: number };
+// Net worth split into the buckets that explain how it changed
+export const NET_WORTH_BUCKETS = ['cash', 'investments', 'property', 'credit', 'loans'] as const;
+export type NetWorthBucket = (typeof NET_WORTH_BUCKETS)[number];
 
-export type DashboardIssue = { item_id: string; code: string; message: string };
+export const BUCKET_LABELS: Record<NetWorthBucket, string> = {
+  cash: 'Cash',
+  investments: 'Investments',
+  property: 'Property & other assets',
+  credit: 'Credit cards',
+  loans: 'Loans',
+};
+
+/** Which bucket an account type (or "manual" for a manual asset) belongs to */
+export function bucketOf(type: string | null | undefined): NetWorthBucket {
+  if (type === 'depository') return 'cash';
+  if (type === 'investment') return 'investments';
+  if (type === 'credit') return 'credit';
+  if (type === 'loan') return 'loans';
+  return 'property';
+}
+
+export type NetWorthPoint = {
+  date: string;
+  assets: number;
+  liabilities: number;
+  netWorth: number;
+  /** Balance per bucket; credit and loans are amounts owed (positive) */
+  byBucket: Record<NetWorthBucket, number>;
+};
+
+export function pointFromBuckets(date: string, byBucket: Record<NetWorthBucket, number>): NetWorthPoint {
+  const liabilities = byBucket.credit + byBucket.loans;
+  const assets = byBucket.cash + byBucket.investments + byBucket.property;
+  return { date, assets, liabilities, netWorth: assets - liabilities, byBucket };
+}
+
+export type DashboardIssue = { item_id: string; code: string; message: string; institution?: string };
+
+// One linked login at one institution (a Plaid "Item")
+export type Connection = {
+  item_id: string;
+  institution: string;
+  accountCount: number;
+  lastSyncedAt: string | null;
+  /** ok, or the Plaid error code that's blocking this connection */
+  status: 'ok' | 'reconnect' | 'consent' | 'error';
+  message?: string;
+};
+
+export const ASSET_KINDS = ['real_estate', 'vehicle', 'crypto', 'cash', 'investment', 'valuables', 'other'] as const;
+export type AssetKind = (typeof ASSET_KINDS)[number];
+
+export const ASSET_KIND_META: Record<AssetKind, { label: string; icon: LucideIcon; hint: string; defaultRate: number | null }> = {
+  real_estate: { label: 'Real estate', icon: Home, hint: 'Home, rental, land', defaultRate: 3 },
+  vehicle: { label: 'Vehicle', icon: Car, hint: 'Car, motorcycle, boat', defaultRate: -15 },
+  crypto: { label: 'Crypto', icon: Bitcoin, hint: 'Coins in a wallet or an unlinked exchange', defaultRate: null },
+  cash: { label: 'Cash', icon: Banknote, hint: 'Cash on hand, an unlinked bank', defaultRate: null },
+  investment: { label: 'Investment', icon: Briefcase, hint: 'Private equity, startup shares, an unlinked account', defaultRate: null },
+  valuables: { label: 'Valuables', icon: Gem, hint: 'Jewelry, art, collectibles', defaultRate: null },
+  other: { label: 'Other', icon: Package, hint: 'Anything else you own', defaultRate: null },
+};
+
+export type ManualAsset = {
+  id: number;
+  name: string;
+  kind: AssetKind;
+  /** Today's estimated value: the entered value adjusted by annual_rate since value_date */
+  value: number;
+  /** What the user entered, and when */
+  entered_value: number;
+  value_date: string;
+  /** Yearly change in percent (3 = +3%/yr, -15 = −15%/yr), or null to keep the value fixed */
+  annual_rate: number | null;
+  notes: string | null;
+};
+
+// Grows or shrinks a value by a yearly rate, compounded daily-ish, from one day to another
+export function projectAssetValue(value: number, annualRate: number | null, fromDay: string, toDay: string) {
+  if (!annualRate) return value;
+  const years = Math.max(0, (parseDay(toDay).getTime() - parseDay(fromDay).getTime()) / (365.25 * 86_400_000));
+  return Math.round(value * Math.pow(1 + annualRate / 100, years) * 100) / 100;
+}
 
 export type DashboardData = {
   linked: boolean;
@@ -45,6 +126,8 @@ export type DashboardData = {
   transactions: Txn[];
   holdings: HoldingRow[];
   issues: DashboardIssue[];
+  connections: Connection[];
+  manualAssets: ManualAsset[];
   settings: { transferRules: TransferRules; dismissedRecurring: string[] };
   rules: CategoryRule[];
   history: NetWorthPoint[];

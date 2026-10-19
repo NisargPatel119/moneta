@@ -2,7 +2,9 @@ import type { AccountBase, Transaction } from 'plaid';
 import { sql } from '@/lib/db';
 import { plaidClient } from '@/lib/plaid';
 import { plaidErrorBody } from '@/lib/errors';
-import { dayKey, merchantKey, type CategoryRule, type NetWorthPoint, type Txn } from '@/lib/finance';
+import {
+  NET_WORTH_BUCKETS, bucketOf, dayKey, merchantKey, pointFromBuckets, type CategoryRule, type NetWorthBucket, type NetWorthPoint, type Txn,
+} from '@/lib/finance';
 
 // How long synced data counts as fresh before the dashboard asks Plaid again
 const SYNC_STALE_MS = 10 * 60_000;
@@ -10,6 +12,8 @@ const SYNC_STALE_MS = 10 * 60_000;
 const DAYS_REQUESTED = 730;
 // Rows per INSERT; Postgres arrays keep this to one round trip per chunk
 const CHUNK = 500;
+// New transactions older than this skip the review inbox (e.g. the 2 years pulled when a bank is first linked)
+const REVIEW_WINDOW_DAYS = 14;
 
 type ItemRow = { access_token: string; item_id: string; sync_cursor: string | null; last_synced_at: string | null };
 
@@ -66,12 +70,15 @@ export async function syncItemTransactions(item: ItemRow) {
 }
 
 async function upsertTransactions(itemId: string, txns: Transaction[]) {
+  const reviewCutoff = new Date();
+  reviewCutoff.setDate(reviewCutoff.getDate() - REVIEW_WINDOW_DAYS);
+  const cutoffKey = dayKey(reviewCutoff);
   for (let i = 0; i < txns.length; i += CHUNK) {
     const rows = txns.slice(i, i + CHUNK);
     await sql`
       INSERT INTO transactions (
         transaction_id, item_id, account_id, date, amount, name, merchant_name, pending,
-        pending_transaction_id, logo_url, pfc_primary, pfc_detailed
+        pending_transaction_id, logo_url, pfc_primary, pfc_detailed, reviewed
       )
       SELECT * FROM UNNEST(
         ${rows.map(t => t.transaction_id)}::text[],
@@ -85,7 +92,8 @@ async function upsertTransactions(itemId: string, txns: Transaction[]) {
         ${rows.map(t => t.pending_transaction_id ?? null)}::text[],
         ${rows.map(t => t.logo_url ?? null)}::text[],
         ${rows.map(t => t.personal_finance_category?.primary ?? null)}::text[],
-        ${rows.map(t => t.personal_finance_category?.detailed ?? null)}::text[]
+        ${rows.map(t => t.personal_finance_category?.detailed ?? null)}::text[],
+        ${rows.map(t => t.date < cutoffKey)}::boolean[]
       )
       ON CONFLICT (transaction_id) DO UPDATE SET
         account_id = EXCLUDED.account_id,
@@ -110,7 +118,8 @@ async function carryOverEdits(txns: Transaction[]) {
     UPDATE transactions AS posted SET
       user_category = COALESCE(posted.user_category, pend.user_category),
       user_name = COALESCE(posted.user_name, pend.user_name),
-      notes = COALESCE(posted.notes, pend.notes)
+      notes = COALESCE(posted.notes, pend.notes),
+      reviewed = posted.reviewed OR pend.reviewed
     FROM transactions AS pend
     WHERE posted.transaction_id = ANY(${pairs.map(t => t.transaction_id)}::text[])
       AND pend.transaction_id = posted.pending_transaction_id
@@ -138,7 +147,7 @@ type TxnRow = {
   transaction_id: string; account_id: string; date: string; amount: number; name: string;
   merchant_name: string | null; pending: boolean; logo_url: string | null;
   pfc_primary: string | null; pfc_detailed: string | null;
-  user_category: string | null; user_name: string | null; notes: string | null;
+  user_category: string | null; user_name: string | null; notes: string | null; reviewed: boolean;
 };
 
 // Reads stored transactions and applies the user's edits: a manual edit beats a merchant rule,
@@ -146,7 +155,7 @@ type TxnRow = {
 export async function readTransactions(sinceDay: string, rules: CategoryRule[]): Promise<Txn[]> {
   const rows = (await sql`
     SELECT transaction_id, account_id, date, amount, name, merchant_name, pending, logo_url,
-           pfc_primary, pfc_detailed, user_category, user_name, notes
+           pfc_primary, pfc_detailed, user_category, user_name, notes, reviewed
     FROM transactions
     WHERE date >= ${sinceDay}
     ORDER BY date DESC, transaction_id
@@ -170,6 +179,7 @@ export async function readTransactions(sinceDay: string, rules: CategoryRule[]):
       user_name: r.user_name ?? rule?.rename ?? null,
       notes: r.notes,
       edited: manual ? 'manual' : rule ? 'rule' : null,
+      reviewed: r.reviewed,
     };
   });
 }
@@ -193,14 +203,12 @@ export async function readNetWorthHistory(): Promise<NetWorthPoint[]> {
     for (; i < rows.length && rows[i].date === date; i++) {
       last.set(rows[i].account_id, { date, type: rows[i].type, current: rows[i].current ?? 0 });
     }
-    let assets = 0;
-    let liabilities = 0;
+    const byBucket = Object.fromEntries(NET_WORTH_BUCKETS.map(b => [b, 0])) as Record<NetWorthBucket, number>;
     for (const [id, a] of last) {
       if (daysBetween(a.date, date) > 7) { last.delete(id); continue; }
-      if (a.type === 'credit' || a.type === 'loan') liabilities += a.current;
-      else assets += a.current;
+      byBucket[bucketOf(a.type)] += a.current;
     }
-    points.push({ date, assets, liabilities, netWorth: assets - liabilities });
+    points.push(pointFromBuckets(date, byBucket));
   }
   return points;
 }

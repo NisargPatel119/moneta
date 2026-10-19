@@ -46,7 +46,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       `;
       await sql`
         UPDATE transactions SET user_category = NULL, user_name = NULL,
-          notes = CASE WHEN ${notes !== undefined} THEN ${notes ?? null} ELSE notes END, updated_at = NOW()
+          notes = CASE WHEN ${notes !== undefined} THEN ${notes ?? null} ELSE notes END,
+          reviewed = TRUE, updated_at = NOW()
         WHERE transaction_id = ${id}
       `;
     } else {
@@ -55,6 +56,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           user_category = CASE WHEN ${category !== undefined} THEN ${category ?? null} ELSE user_category END,
           user_name = CASE WHEN ${name !== undefined} THEN ${name ?? null} ELSE user_name END,
           notes = CASE WHEN ${notes !== undefined} THEN ${notes ?? null} ELSE notes END,
+          -- Editing a transaction is reviewing it
+          reviewed = TRUE,
           updated_at = NOW()
         WHERE transaction_id = ${id}
       `;

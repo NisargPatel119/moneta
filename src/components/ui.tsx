@@ -1,6 +1,6 @@
 'use client';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { Type } from 'lucide-react';
+import { Type, X } from 'lucide-react';
 import { BrandMark } from './BrandMark';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -186,5 +186,85 @@ export function Logo({ size = 'md' }: { size?: 'md' | 'lg' }) {
     <span aria-hidden="true" className="inline-flex shrink-0 rounded-full ring-1 ring-offset-2 ring-offset-canvas ring-line-strong">
       <BrandMark size={size === 'lg' ? 56 : 40} ink="var(--ink)" paper="var(--canvas)" />
     </span>
+  );
+}
+
+// ---------- Sheet: a bottom sheet on phones, a centered dialog on larger screens ----------
+
+export function Sheet({ open, onClose, title, subtitle, children, footer, wide, z = 'z-30' }: {
+  open: boolean;
+  onClose: () => void;
+  title: ReactNode;
+  subtitle?: ReactNode;
+  children: ReactNode;
+  footer?: ReactNode;
+  wide?: boolean;
+  /** Stacking: the transaction editor (z-40) opens on top of other sheets (z-30) */
+  z?: string;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+  return (
+    <div className={cn('fixed inset-0 flex items-end sm:items-center justify-center', z)} role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className={cn(
+        'relative bg-surface w-full max-h-[90dvh] flex flex-col rounded-t-2xl sm:rounded-2xl shadow-xl pb-[env(safe-area-inset-bottom)]',
+        wide ? 'sm:max-w-2xl' : 'sm:max-w-lg',
+      )}>
+        <div className="flex items-start gap-3 p-5 border-b border-line shrink-0">
+          <div className="flex-1 min-w-0">
+            <h2 className="font-display text-3xl tracking-tight leading-tight">{title}</h2>
+            {subtitle && <div className="text-sm text-muted mt-1">{subtitle}</div>}
+          </div>
+          <button onClick={onClose} aria-label="Close" className="p-2 -m-2 rounded-xl text-muted hover:bg-sunken"><X size={20} /></button>
+        </div>
+        <div className="overflow-y-auto flex-1 min-h-0">{children}</div>
+        {footer && <div className="border-t border-line p-4 shrink-0">{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
+// A number you can tap to see what's behind it
+export function DrillButton({ onClick, children, className, label }: {
+  onClick: () => void; children: ReactNode; className?: string; label?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      className={cn('text-left rounded-lg -m-1 p-1 hover:bg-sunken transition-colors underline decoration-dotted decoration-line-strong underline-offset-4', className)}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ---------- Toast with an optional Undo ----------
+
+export type ToastMessage = { text: string; undo?: () => void };
+
+export function Toast({ toast, onDone }: { toast: ToastMessage | null; onDone: () => void }) {
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(onDone, 6000);
+    return () => clearTimeout(id);
+  }, [toast, onDone]);
+  if (!toast) return null;
+  return (
+    <div className="fixed inset-x-0 bottom-24 md:bottom-auto md:top-20 z-50 flex justify-center px-4 pointer-events-none">
+      <div role="status" className="pointer-events-auto flex items-center gap-4 bg-ink text-canvas rounded-xl px-4 py-3 shadow-lg text-sm font-medium max-w-md">
+        <span>{toast.text}</span>
+        {toast.undo && (
+          <button onClick={() => { toast.undo!(); onDone(); }} className="font-bold underline shrink-0">Undo</button>
+        )}
+      </div>
+    </div>
   );
 }

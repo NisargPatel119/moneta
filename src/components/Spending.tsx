@@ -5,8 +5,9 @@ import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Too
 import {
   ACCOUNT_TYPE_LABELS, ACCOUNT_TYPE_ORDER, type DashboardData, categoryMeta, dayKey,
   type Txn, displayName, formatCompact, formatMoney, inRange, monthRange, parseDay, spendingByCategory,
-  sumIncome, sumSpending,
+  sumIncome, sumSpending, isIncome,
 } from '@/lib/finance';
+import { dayDrill, type Drill } from './DrillSheet';
 import type { TxnRules } from '@/lib/transfers';
 import { Card, Money, SectionTitle, cn, usePrivacy, tint } from './ui';
 import { TransactionList } from './TransactionList';
@@ -30,8 +31,9 @@ function periodRange(p: Period) {
   return { start: dayKey(start), end: dayKey(new Date()) };
 }
 
-export function Spending({ data, rules, accountName, category, setCategory, onOpenTransfers, onSelect }: {
+export function Spending({ data, rules, accountName, category, setCategory, onOpenTransfers, onSelect, onDrill }: {
   onSelect: (t: Txn) => void;
+  onDrill: (d: Drill) => void;
   data: DashboardData;
   rules: TxnRules;
   accountName: (id: string) => string | undefined;
@@ -99,7 +101,7 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
     const out = [];
     for (let d = parseDay(range.start); dayKey(d) <= range.end; d.setDate(d.getDate() + 1)) {
       const key = dayKey(d);
-      out.push({ label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), spend: totals.get(key) ?? 0 });
+      out.push({ day: key, label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), spend: totals.get(key) ?? 0 });
     }
     return out;
   }, [periodTxns, period, range.start, range.end, rules]);
@@ -107,6 +109,22 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
   const groupedAccounts = ACCOUNT_TYPE_ORDER
     .map(type => ({ type, accounts: data.accounts.filter(a => (a.type ?? 'other') === type) }))
     .filter(g => g.accounts.length > 0);
+
+  const periodLabel = PERIODS.find(p => p.id === period)!.label;
+  const totalsDrill = (title: string, txns: Txn[], total: 'spending' | 'income' | 'flow') =>
+    onDrill({ kind: 'txns', title, subtitle: periodLabel, txns, total });
+
+  // Tapping a day on either chart lists what was spent that day
+  const openDay = (index: unknown, days: (string | null)[]) => {
+    const day = days[Number(index)];
+    if (day) onDrill(dayDrill(day, data.transactions, rules, accountId));
+  };
+  const thisMonthStart = monthRange(0).start;
+  const today = dayKey(new Date());
+  const paceDays = paceData.map(p => {
+    const day = `${thisMonthStart.slice(0, 8)}${String(p.day).padStart(2, '0')}`;
+    return day <= today ? day : null;
+  });
 
   const tooltipStyle = { borderRadius: 12, border: '1px solid var(--line)', background: 'var(--surface)', color: 'var(--ink)', boxShadow: '0 4px 12px rgb(0 0 0 / 0.08)', fontSize: 13 };
   const axisTick = { fontSize: 12, fill: 'var(--muted)' };
@@ -162,18 +180,18 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
 
       {/* Totals */}
       <div className="grid grid-cols-3 gap-3">
-        <Card className="p-4 sm:p-5">
+        <button onClick={() => totalsDrill('Spending', periodTxns.filter(t => rules.isSpending(t)), 'spending')} className="text-left bg-surface rounded-2xl border border-line p-4 sm:p-5 hover:bg-sunken transition-colors">
           <p className="eyebrow text-muted">Spent</p>
           <Money value={spent} whole className="block text-3xl sm:text-4xl font-display font-normal tracking-tight leading-none text-ink mt-2" />
-        </Card>
-        <Card className="p-4 sm:p-5">
+        </button>
+        <button onClick={() => totalsDrill('Income', periodTxns.filter(isIncome), 'income')} className="text-left bg-surface rounded-2xl border border-line p-4 sm:p-5 hover:bg-sunken transition-colors">
           <p className="eyebrow text-muted">Income</p>
           <Money value={income} whole className="block text-3xl sm:text-4xl font-display font-normal tracking-tight leading-none text-positive mt-2" />
-        </Card>
-        <Card className="p-4 sm:p-5">
+        </button>
+        <button onClick={() => totalsDrill('Income & spending', periodTxns.filter(t => isIncome(t) || rules.isSpending(t)), 'flow')} className="text-left bg-surface rounded-2xl border border-line p-4 sm:p-5 hover:bg-sunken transition-colors">
           <p className="eyebrow text-muted">Net</p>
           <Money value={income - spent} whole className={cn('block text-3xl sm:text-4xl font-display font-normal tracking-tight leading-none mt-2', income - spent >= 0 ? 'text-positive' : 'text-ink')} />
-        </Card>
+        </button>
       </div>
 
       {/* Chart */}
@@ -192,7 +210,7 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
         <div className={cn('h-56 sm:h-64 w-full', hidden && 'blur-md')}>
           <ResponsiveContainer width="100%" height="100%">
             {period === 'this' ? (
-              <LineChart data={paceData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <LineChart data={paceData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} onClick={e => openDay(e?.activeIndex, paceDays)} style={{ cursor: 'pointer' }}>
                 <CartesianGrid vertical={false} stroke="var(--line)" />
                 <XAxis dataKey="day" tick={axisTick} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={24} />
                 <YAxis tickFormatter={formatCompact} tick={axisTick} axisLine={false} tickLine={false} width={56} />
@@ -205,7 +223,7 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
                 <Line type="monotone" dataKey="thisMonth" stroke={THIS_MONTH} strokeWidth={2} dot={false} activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} connectNulls={false} />
               </LineChart>
             ) : (
-              <BarChart data={dailyData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <BarChart data={dailyData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} onClick={e => openDay(e?.activeIndex, dailyData.map(d => d.day))} style={{ cursor: 'pointer' }}>
                 <CartesianGrid vertical={false} stroke="var(--line)" />
                 <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} minTickGap={24} />
                 <YAxis tickFormatter={formatCompact} tick={axisTick} axisLine={false} tickLine={false} width={56} />
@@ -215,6 +233,7 @@ export function Spending({ data, rules, accountName, category, setCategory, onOp
             )}
           </ResponsiveContainer>
         </div>
+        <p className="text-xs text-faint mt-2">Tap a day to see what you spent.</p>
       </Card>
 
       {/* Categories */}

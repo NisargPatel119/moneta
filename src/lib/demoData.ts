@@ -1,6 +1,6 @@
 import type { FinancialData, HoldingRow } from './plaidData';
 import { DEFAULT_TRANSFER_RULES } from './transfers';
-import { dayKey, type NetWorthPoint, type Txn } from './finance';
+import { dayKey, pointFromBuckets, projectAssetValue, type Connection, type ManualAsset, type NetWorthPoint, type Txn } from './finance';
 
 // Demo mode: realistic, made-up finances so anyone can try Moneta (and take screenshots)
 // without connecting a bank. No Plaid, database, or password needed, and real data is never read.
@@ -83,14 +83,30 @@ export function getDemoData(): FinancialData {
   })) as unknown as FinancialData['accounts'];
 
   const transactions = buildTransactions(today);
+  const manualAssets = buildManualAssets(today);
 
-  let assets = 0;
-  let liabilities = 0;
+  const buckets = { cash: 0, investments: 0, property: 0, credit: 0, loans: 0 };
   for (const a of accounts) {
     const bal = a.balances.current ?? 0;
-    if (a.type === 'credit' || a.type === 'loan') liabilities += bal;
-    else assets += bal;
+    if (a.type === 'credit') buckets.credit += bal;
+    else if (a.type === 'loan') buckets.loans += bal;
+    else if (a.type === 'investment') buckets.investments += bal;
+    else buckets.cash += bal;
   }
+  buckets.property = manualAssets.reduce((s, a) => s + a.value, 0);
+  const assets = buckets.cash + buckets.investments + buckets.property;
+  const liabilities = buckets.credit + buckets.loans;
+
+  // Harbor Investments asks to sign in again, to show the reconnect flow
+  const connections: Connection[] = [
+    { item_id: 'demo-northwind', institution: 'Northwind Bank', accountCount: 3, lastSyncedAt: today.toISOString(), status: 'ok' },
+    { item_id: 'demo-summit', institution: 'Summit Card', accountCount: 1, lastSyncedAt: today.toISOString(), status: 'ok' },
+    {
+      item_id: 'demo-harbor', institution: 'Harbor Investments', accountCount: 3,
+      lastSyncedAt: new Date(today.getTime() - 3 * 86_400_000).toISOString(), status: 'reconnect',
+      message: 'Harbor Investments needs you to sign in again.',
+    },
+  ];
 
   const data: FinancialData = {
     linked: true,
@@ -101,10 +117,12 @@ export function getDemoData(): FinancialData {
     accounts,
     transactions,
     holdings: holdings.sort((a, b) => b.value - a.value),
-    issues: [],
+    issues: [{ item_id: 'demo-harbor', code: 'ITEM_LOGIN_REQUIRED', institution: 'Harbor Investments', message: 'Harbor Investments needs you to sign in again.' }],
+    connections,
+    manualAssets,
     settings: { transferRules: DEFAULT_TRANSFER_RULES, dismissedRecurring: [] },
     rules: [],
-    history: buildHistory(today, assets, liabilities),
+    history: buildHistory(today, buckets),
     fetchedAt: today.toISOString(),
   };
   cached = { day: todayKey, data };
@@ -123,10 +141,12 @@ function buildTransactions(today: Date): Txn[] {
     if (key > todayKey) return;
     // The last couple of days are still pending, like real bank data
     const pending = (today.getTime() - date.getTime()) / 86_400_000 < 2 && primary !== 'INCOME';
+    // The last week shows up in the review inbox
+    const reviewed = (today.getTime() - date.getTime()) / 86_400_000 > 7;
     txns.push({
       transaction_id: `demo-${++n}`, account_id: account, date: key, amount, name, merchant_name: merchant,
       pending, logo_url: null, personal_finance_category: { primary, detailed },
-      user_category: null, user_name: null, notes: null, edited: null,
+      user_category: null, user_name: null, notes: null, edited: null, reviewed,
     });
   };
 
@@ -202,23 +222,39 @@ function buildTransactions(today: Date): Txn[] {
   return txns.sort((a, b) => b.date.localeCompare(a.date) || a.transaction_id.localeCompare(b.transaction_id));
 }
 
-// A year of daily net worth: steady saving plus market ups and downs, ending at today's value
-function buildHistory(today: Date, assets: number, liabilities: number): NetWorthPoint[] {
+function buildManualAssets(today: Date): ManualAsset[] {
+  const todayKey = dayKey(today);
+  const enteredOn = (monthsAgo: number) => dayKey(new Date(today.getFullYear(), today.getMonth() - monthsAgo, 1));
+  const asset = (id: number, name: string, kind: ManualAsset['kind'], entered: number, monthsAgo: number, rate: number | null): ManualAsset => ({
+    id, name, kind, entered_value: entered, value_date: enteredOn(monthsAgo), annual_rate: rate, notes: null,
+    value: projectAssetValue(entered, rate, enteredOn(monthsAgo), todayKey),
+  });
+  return [
+    asset(1, 'Home', 'real_estate', 485000, 10, 3),
+    asset(2, '2021 Honda CR-V', 'vehicle', 24000, 10, -15),
+  ];
+}
+
+// A year of daily net worth per bucket: steady saving plus market ups and downs, ending at today's values
+function buildHistory(today: Date, end: NetWorthPoint['byBucket']): NetWorthPoint[] {
   const rand = rng(7);
   const days = 365;
   const walk: number[] = [0];
-  for (let i = 1; i < days; i++) walk.push(walk[i - 1] + (rand() - 0.47) * 1900);
+  for (let i = 1; i < days; i++) walk.push(walk[i - 1] + (rand() - 0.47) * 1500);
   const points: NetWorthPoint[] = [];
   for (let i = 0; i < days; i++) {
     const daysAgo = days - 1 - i;
     const d = new Date(today);
     d.setDate(d.getDate() - daysAgo);
-    // Drift so the year shows growth, plus the random walk re-anchored to end at today
-    const drift = -daysAgo * 165;
-    const noise = walk[i] - walk[days - 1];
-    const a = assets + drift + noise;
-    const l = liabilities + daysAgo * 9; // the auto loan shrinks over the year
-    points.push({ date: dayKey(d), assets: a, liabilities: l, netWorth: a - l });
+    // Investments drift up with market noise, re-anchored to end at today's value
+    const investments = end.investments - daysAgo * 120 + (walk[i] - walk[days - 1]);
+    // Wiggles are shifted so every series lands exactly on today's balance
+    const wiggle = (period: number, size: number) => (Math.sin(i / period) - Math.sin((days - 1) / period)) * size;
+    const cash = end.cash - daysAgo * 30 + wiggle(4.3, 900);
+    const property = end.property / Math.pow(1.02, daysAgo / 365);
+    const credit = Math.max(0, end.credit + wiggle(5, 400));
+    const loans = end.loans + daysAgo * 9; // the auto loan shrinks over the year
+    points.push(pointFromBuckets(dayKey(d), { cash, investments, property, credit, loans }));
   }
   return points;
 }

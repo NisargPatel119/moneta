@@ -4,7 +4,8 @@ import { ensureSchema, sql } from '@/lib/db';
 import { plaidClient } from '@/lib/plaid';
 import { getSettings, type AppSettings } from '@/lib/settings';
 import { getDemoData, isDemo } from '@/lib/demoData';
-import { dayKey, type CategoryRule, type NetWorthPoint, type Txn } from '@/lib/finance';
+import { dayKey, type CategoryRule, type Connection, type ManualAsset, type NetWorthPoint, type Txn } from '@/lib/finance';
+import { readManualAssets, snapshotManualAssets } from '@/lib/manualAssets';
 import {
   isStale, readNetWorthHistory, readRules, readTransactions, snapshotBalances, syncItemTransactions,
 } from '@/lib/transactionStore';
@@ -28,7 +29,7 @@ export type HoldingRow = {
   is_cash: boolean;
 };
 
-export type Issue = { item_id: string; code: string; message: string };
+export type Issue = { item_id: string; code: string; message: string; institution?: string };
 
 export type FinancialData = {
   linked: boolean;
@@ -41,6 +42,8 @@ export type FinancialData = {
   transactions: Txn[];
   holdings: HoldingRow[];
   issues: Issue[];
+  connections: Connection[];
+  manualAssets: ManualAsset[];
   settings: AppSettings;
   rules: CategoryRule[];
   history: NetWorthPoint[];
@@ -60,14 +63,15 @@ export async function getFinancialData({ bypassCache = false, forceSync = false 
   if (!bypassCache && cache && Date.now() - cache.at < CACHE_MS) return cache.data;
 
   await ensureSchema();
-  const [items, settings] = await Promise.all([
-    sql`SELECT access_token, item_id, sync_cursor, last_synced_at FROM plaid_items`,
+  const [items, settings, manualAssets] = await Promise.all([
+    sql`SELECT access_token, item_id, sync_cursor, last_synced_at, institution_name FROM plaid_items`,
     getSettings(),
+    readManualAssets(),
   ]);
-  if (items.length === 0) {
+  if (items.length === 0 && manualAssets.length === 0) {
     return {
       linked: false, netWorth: 0, assets: 0, liabilities: 0, accounts: [], transactions: [], holdings: [],
-      issues: [], settings, rules: [], history: [], fetchedAt: new Date().toISOString(),
+      issues: [], connections: [], manualAssets: [], settings, rules: [], history: [], fetchedAt: new Date().toISOString(),
     };
   }
 
@@ -75,27 +79,53 @@ export async function getFinancialData({ bypassCache = false, forceSync = false 
   // returns Plaid's cached balances: fast and cheap); transactions sync into our database
   // only when they're stale, so most loads read straight from Postgres.
   const results = await Promise.all(items.map(async (row) => {
-    const item = row as { access_token: string; item_id: string; sync_cursor: string | null; last_synced_at: string | null };
+    const item = row as {
+      access_token: string; item_id: string; sync_cursor: string | null; last_synced_at: string | null; institution_name: string | null;
+    };
     const issues: Issue[] = [];
 
     // Each product is fetched independently so a brokerage without transactions
     // (or a bank without investments) still shows what it does have.
-    const [accountsRes, holdings] = await Promise.all([
+    const [accountsRes, holdings, synced] = await Promise.all([
       plaidClient.accountsGet({ access_token: item.access_token }).catch(e => { issues.push(toIssue(item.item_id, e)); return null; }),
       fetchHoldings(item.access_token).catch(e => { noteIssue(issues, item.item_id, e); return []; }),
-      (forceSync || isStale(item)) && syncItemTransactions(item).catch(e => noteIssue(issues, item.item_id, e)),
+      (forceSync || isStale(item)) && syncItemTransactions(item).then(() => true, e => { noteIssue(issues, item.item_id, e); return false; }),
     ]);
 
     if (accountsRes) await snapshotBalances(item.item_id, accountsRes.data.accounts);
 
-    const institution = accountsRes?.data.item.institution_name ?? 'Bank';
+    const institution = accountsRes?.data.item.institution_name ?? item.institution_name ?? 'Your bank';
+    if (accountsRes?.data.item.institution_name && accountsRes.data.item.institution_name !== item.institution_name) {
+      await sql`UPDATE plaid_items SET institution_name = ${institution} WHERE item_id = ${item.item_id}`;
+    }
+    const accounts = (accountsRes?.data.accounts ?? []).map(a => ({ ...a, institution, item_id: item.item_id }));
+    for (const issue of issues) issue.institution = institution;
+
+    const blocking = issues.find(i => i.code === 'ITEM_LOGIN_REQUIRED')
+      ?? issues.find(i => i.code === 'ADDITIONAL_CONSENT_REQUIRED')
+      ?? issues[0];
+    const connection: Connection = {
+      item_id: item.item_id,
+      institution,
+      accountCount: accounts.length,
+      lastSyncedAt: synced ? new Date().toISOString() : item.last_synced_at ? new Date(item.last_synced_at).toISOString() : null,
+      status: !blocking ? 'ok'
+        : blocking.code === 'ITEM_LOGIN_REQUIRED' ? 'reconnect'
+        : blocking.code === 'ADDITIONAL_CONSENT_REQUIRED' ? 'consent'
+        : 'error',
+      message: blocking?.message,
+    };
     return {
-      accounts: (accountsRes?.data.accounts ?? []).map(a => ({ ...a, institution, item_id: item.item_id })),
+      accounts,
       holdings,
+      connection,
       // One banner per bank is enough
-      issues: issues.slice(0, 1),
+      issues: blocking ? [blocking] : [],
     };
   }));
+
+  // Manual assets join the daily history, like linked balances (errors here shouldn't block the page)
+  await snapshotManualAssets(manualAssets).catch(e => console.error('Manual asset snapshot failed:', errorMessage(e)));
 
   const since = new Date();
   since.setMonth(since.getMonth() - HISTORY_MONTHS);
@@ -108,8 +138,9 @@ export async function getFinancialData({ bypassCache = false, forceSync = false 
   const accounts = results.flatMap(r => r.accounts);
   const holdings = results.flatMap(r => r.holdings).sort((a, b) => b.value - a.value);
   const issues = results.flatMap(r => r.issues);
+  const connections = results.map(r => r.connection);
 
-  let assets = 0;
+  let assets = manualAssets.reduce((s, a) => s + a.value, 0);
   let liabilities = 0;
   for (const acc of accounts) {
     const balance = acc.balances.current || 0;
@@ -126,6 +157,8 @@ export async function getFinancialData({ bypassCache = false, forceSync = false 
     transactions,
     holdings,
     issues,
+    connections,
+    manualAssets,
     settings,
     rules,
     history,

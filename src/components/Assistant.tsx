@@ -13,9 +13,12 @@ const SUGGESTIONS = [
 ];
 
 // Messages live in the parent so the conversation survives switching tabs
-export function Assistant({ messages, setMessages }: {
+export function Assistant({ messages, setMessages, autoSend, onAutoSent }: {
   messages: ChatMessage[];
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+  /** A question to ask as soon as the tab opens (e.g. from the monthly recap) */
+  autoSend?: string | null;
+  onAutoSent?: () => void;
 }) {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -25,6 +28,13 @@ export function Assistant({ messages, setMessages }: {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages]);
+
+  useEffect(() => {
+    if (!autoSend) return;
+    onAutoSent?.();
+    void send(autoSend);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSend]);
 
   async function send(text: string) {
     const question = text.trim();

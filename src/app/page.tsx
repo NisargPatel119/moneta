@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Building2, CheckCircle2, ChartPie, Eye, EyeOff, Landmark, LayoutDashboard, LogOut, Plus, Receipt,
+  Building2, CheckCircle2, ChartPie, Eye, EyeOff, House, Inbox, Landmark, LayoutDashboard, LogOut, Plus, Receipt,
   RefreshCw, Sparkles, TriangleAlert, X,
 } from 'lucide-react';
 import { logout } from '@/app/login/actions';
@@ -17,8 +17,16 @@ import { TransactionEditor, type TxnEdit } from '@/components/TransactionEditor'
 import { Recurring } from '@/components/Recurring';
 import { detectRecurring } from '@/lib/recurring';
 import { DEFAULT_TRANSFER_RULES, makeTxnRules, type TransferRules } from '@/lib/transfers';
-import { Card, Logo, PrivacyProvider, Skeleton, TextSizeControl, cn, usePrivacy } from '@/components/ui';
-import { type CategoryRule, type DashboardData, type Txn, merchantKey, timeAgo } from '@/lib/finance';
+import { Card, Logo, PrivacyProvider, Skeleton, TextSizeControl, Toast, cn, usePrivacy, type ToastMessage } from '@/components/ui';
+import { DrillSheet, type Drill } from '@/components/DrillSheet';
+import { ReviewInbox } from '@/components/ReviewInbox';
+import { MonthlyRecapSheet } from '@/components/MonthlyRecap';
+import { AssetEditor, type AssetDraft } from '@/components/AssetEditor';
+import { buildRecap, monthBounds, monthKey } from '@/lib/insights';
+import {
+  type Account, type CategoryRule, type DashboardData, type ManualAsset, type Txn, categoryMeta, dayKey, displayName,
+  merchantKey, timeAgo,
+} from '@/lib/finance';
 
 type Tab = 'overview' | 'spending' | 'investments' | 'accounts' | 'assistant';
 
@@ -48,6 +56,13 @@ function Dashboard() {
   const [transfersOpen, setTransfersOpen] = useState(false);
   const [spendingView, setSpendingView] = useState<'activity' | 'recurring'>('activity');
   const [selectedTxn, setSelectedTxn] = useState<Txn | null>(null);
+  const [drill, setDrill] = useState<Drill | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [recapMonth, setRecapMonth] = useState<string | null>(null);
+  const [assetEditing, setAssetEditing] = useState<ManualAsset | 'new' | null>(null);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const [aiPrompt, setAiPrompt] = useState<string | null>(null);
+  const clearToast = useCallback(() => setToast(null), []);
   const [, forceTick] = useState(0);
   const { hidden, toggle } = usePrivacy();
 
@@ -96,6 +111,21 @@ function Dashboard() {
     [data, txnRules]
   );
 
+  // New transactions waiting in the review inbox (hidden transfers never need a look)
+  const reviewQueue = useMemo(
+    () => (data?.transactions ?? []).filter(t => !t.reviewed && !txnRules.isHidden(t)),
+    [data, txnRules]
+  );
+
+  // Last month's recap for the Overview, once there's data for it
+  const lastMonthRecap = useMemo(() => {
+    if (!data) return null;
+    const month = monthKey(-1);
+    const { start, end } = monthBounds(month);
+    if (!data.transactions.some(t => t.date >= start && t.date <= end)) return null;
+    return buildRecap(month, data.transactions, txnRules, recurring, data.history ?? []);
+  }, [data, txnRules, recurring]);
+
   // Optimistic: apply immediately, then save so other devices (and the AI) use the same settings
   const saveSettings = (patch: Partial<DashboardData['settings']>) => {
     setData(d => (d ? { ...d, settings: { ...d.settings, ...patch } } : d));
@@ -121,6 +151,8 @@ function Dashboard() {
         if (!affected) return t;
         return {
           ...t,
+          // Editing a transaction counts as reviewing it
+          ...(t.transaction_id === txn.transaction_id && { reviewed: true }),
           ...('category' in edit && { user_category: edit.category ?? null }),
           ...('name' in edit && { user_name: edit.name ?? null }),
           ...(t.transaction_id === txn.transaction_id && 'notes' in edit && { notes: edit.notes ?? null }),
@@ -136,6 +168,98 @@ function Dashboard() {
     if (!res.ok) setError('Could not save that change.');
     // The demo doesn't save edits on the server, so keep the local copy instead of reloading
     if (!data?.demo) fetchData();
+  };
+
+  // Check transactions off in the review inbox (reviewed=false puts them back, for Undo)
+  const setReviewed = async (txns: Txn[], reviewed = true) => {
+    const ids = new Set(txns.map(t => t.transaction_id));
+    setData(d => d && { ...d, transactions: d.transactions.map(t => (ids.has(t.transaction_id) ? { ...t, reviewed } : t)) });
+    if (reviewed) {
+      setToast({
+        text: txns.length === 1 ? `Reviewed ${displayName(txns[0])}` : `Marked ${txns.length} transactions as reviewed`,
+        undo: () => { void setReviewed(txns, false); },
+      });
+    }
+    const res = await fetch('/api/transactions/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [...ids], reviewed }),
+    }).catch(() => null);
+    if (!res?.ok) setError('Could not save your review. It will show up again when you reload.');
+  };
+
+  const reviewCategory = (txn: Txn, category: string) => {
+    void saveTxnEdit(txn, { category });
+    setToast({ text: `${displayName(txn)} → ${categoryMeta(category).label}` });
+  };
+
+  // Returns an error message to show in the form, or null when saved
+  const saveAsset = async (draft: AssetDraft, id: number | null): Promise<string | null> => {
+    const existing = id != null ? data?.manualAssets.find(a => a.id === id) : null;
+    const body: Partial<AssetDraft> = { ...draft };
+    // Same value as today's estimate: keep the original entry so the yearly estimate carries on
+    if (existing && Math.abs(existing.value - draft.value) < 0.005) delete body.value;
+    const res = await fetch(id != null ? `/api/assets/${id}` : '/api/assets', {
+      method: id != null ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).catch(() => null);
+    const result = await res?.json().catch(() => ({}));
+    if (!res?.ok) return result?.error || 'Could not save. Please try again.';
+    if (result?.demo) {
+      // The demo doesn't save on the server: keep the change on this page only
+      const today = dayKey(new Date());
+      const asset: ManualAsset = {
+        id: id ?? -Date.now(), name: draft.name, kind: draft.kind, value: draft.value, entered_value: draft.value,
+        value_date: today, annual_rate: draft.annual_rate, notes: draft.notes,
+      };
+      setData(d => {
+        if (!d) return d;
+        const manualAssets = id != null ? d.manualAssets.map(a => (a.id === id ? asset : a)) : [...d.manualAssets, asset];
+        const delta = asset.value - (existing?.value ?? 0);
+        return { ...d, manualAssets, assets: d.assets + delta, netWorth: d.netWorth + delta };
+      });
+    } else {
+      fetchData();
+    }
+    setToast({ text: id != null ? `Saved ${draft.name}` : `Added ${draft.name} to your net worth` });
+    return null;
+  };
+
+  const deleteAsset = async (asset: ManualAsset) => {
+    const res = await fetch(`/api/assets/${asset.id}`, { method: 'DELETE' }).catch(() => null);
+    if (!res?.ok) { setError('Could not remove that asset.'); return; }
+    if (data?.demo) {
+      setData(d => d && {
+        ...d,
+        manualAssets: d.manualAssets.filter(a => a.id !== asset.id),
+        assets: d.assets - asset.value,
+        netWorth: d.netWorth - asset.value,
+      });
+    } else {
+      fetchData();
+    }
+    setToast({ text: `Removed ${asset.name}` });
+  };
+
+  const openAccount = (a: Account) => setDrill({
+    kind: 'txns',
+    title: a.name,
+    subtitle: `${a.institution}${a.mask ? ` ••${a.mask}` : ''}`,
+    txns: data?.transactions.filter(t => t.account_id === a.account_id) ?? [],
+    total: 'flow',
+  });
+
+  const openMerchant = (t: Txn) => {
+    setSelectedTxn(null);
+    setDrill({ kind: 'merchant', key: merchantKey(t), name: displayName(t) });
+  };
+
+  const askAI = (prompt: string) => {
+    setRecapMonth(null);
+    setDrill(null);
+    setAiPrompt(prompt);
+    goTo('assistant');
   };
 
   const deleteRule = async (rule: CategoryRule) => {
@@ -179,7 +303,19 @@ function Dashboard() {
               {hidden ? <EyeOff size={18} /> : <Eye size={18} />}
             </IconButton>
             <TextSizeControl />
-            <LinkMenu onPick={plaid.start} busy={plaid.status === 'preparing'} />
+            {data?.linked && (
+              <span className="relative hidden sm:block">
+                <IconButton label={reviewQueue.length ? `${reviewQueue.length} to review` : 'Review inbox'} onClick={() => setReviewOpen(true)}>
+                  <Inbox size={18} />
+                </IconButton>
+                {reviewQueue.length > 0 && (
+                  <span className="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-accent text-on-accent text-[10px] font-bold flex items-center justify-center pointer-events-none">
+                    {reviewQueue.length > 99 ? '99+' : reviewQueue.length}
+                  </span>
+                )}
+              </span>
+            )}
+            <LinkMenu onPick={plaid.start} onAddAsset={() => setAssetEditing('new')} busy={plaid.status === 'preparing'} />
             {!data?.demo && <form action={logout}>
               <IconButton label="Log out" type="submit"><LogOut size={18} /></IconButton>
             </form>}
@@ -223,6 +359,12 @@ function Dashboard() {
             >
               or link a brokerage / retirement account
             </button>
+            <button
+              onClick={() => setAssetEditing('new')}
+              className="mt-2 block mx-auto text-sm font-semibold text-muted hover:text-ink"
+            >
+              or add a home, car, or other asset by hand
+            </button>
             <SetupChecklist />
           </Card>
         ) : (
@@ -256,17 +398,27 @@ function Dashboard() {
                   <a href="https://github.com/NisargPatel119/moneta" className="font-semibold underline">Set up your own</a>
                 </Banner>
               )}
-              {data.issues?.map(issue => (
-                <Banner key={issue.item_id} tone="warn" action={
-                  issue.code === 'ITEM_LOGIN_REQUIRED' ? undefined : <button onClick={load} className="font-semibold underline">Retry</button>
-                }>
-                  {issue.code === 'ITEM_LOGIN_REQUIRED'
-                    ? 'One of your banks needs you to sign in again. Re-link it with "Link account".'
-                    : issue.code === 'ADDITIONAL_CONSENT_REQUIRED'
-                      ? 'To see holdings for one of your accounts, re-link it with "Link account" → Brokerage.'
-                      : issue.message}
-                </Banner>
-              ))}
+              {data.issues?.map(issue => {
+                const bank = issue.institution ?? 'One of your banks';
+                const fix = issue.code === 'ITEM_LOGIN_REQUIRED' ? 'reconnect' : issue.code === 'ADDITIONAL_CONSENT_REQUIRED' ? 'consent' : null;
+                return (
+                  <Banner key={issue.item_id} tone="warn" action={fix ? (
+                    <button
+                      onClick={() => plaid.reconnect(issue.item_id, fix)}
+                      disabled={plaid.status === 'preparing'}
+                      className="shrink-0 font-semibold bg-warn text-surface px-3 py-1.5 rounded-lg disabled:opacity-50"
+                    >
+                      {fix === 'consent' ? 'Allow access' : 'Reconnect'}
+                    </button>
+                  ) : <button onClick={load} className="font-semibold underline">Retry</button>}>
+                    {fix === 'reconnect'
+                      ? `${bank} needs you to sign in again. Until then its balances and transactions won't update.`
+                      : fix === 'consent'
+                        ? `To see investment holdings at ${bank}, Moneta needs your permission.`
+                        : issue.message}
+                  </Banner>
+                );
+              })}
 
               <h2 className="font-display text-4xl tracking-tight">{TABS.find(t => t.id === tab)?.label}</h2>
 
@@ -279,6 +431,11 @@ function Dashboard() {
                   onOpenRecurring={() => { goTo('spending'); setSpendingView('recurring'); }}
                   onSelect={setSelectedTxn}
                   accountName={accountName}
+                  onDrill={setDrill}
+                  recap={lastMonthRecap}
+                  onOpenRecap={() => setRecapMonth(lastMonthRecap?.month ?? monthKey(-1))}
+                  reviewCount={reviewQueue.length}
+                  onOpenReview={() => setReviewOpen(true)}
                 />
               )}
               {tab === 'spending' && (
@@ -306,6 +463,7 @@ function Dashboard() {
                       setCategory={setCategory}
                       onOpenTransfers={() => setTransfersOpen(true)}
                       onSelect={setSelectedTxn}
+                      onDrill={setDrill}
                     />
                   ) : (
                     <Recurring
@@ -313,13 +471,23 @@ function Dashboard() {
                       dismissedCount={data.settings?.dismissedRecurring?.length ?? 0}
                       onDismiss={key => saveSettings({ dismissedRecurring: [...(data.settings?.dismissedRecurring ?? []), key] })}
                       onRestoreAll={() => saveSettings({ dismissedRecurring: [] })}
+                      onOpen={item => setDrill({ kind: 'merchant', key: item.key, name: item.name })}
                     />
                   )}
                 </>
               )}
               {tab === 'investments' && <Investments data={data} onLinkBrokerage={() => plaid.start('brokerage')} />}
-              {tab === 'accounts' && <Accounts data={data} onChanged={load} />}
-              {tab === 'assistant' && <Assistant messages={chat} setMessages={setChat} />}
+              {tab === 'accounts' && (
+                <Accounts
+                  data={data}
+                  onChanged={load}
+                  onReconnect={plaid.reconnect}
+                  reconnecting={plaid.status === 'preparing'}
+                  onAccount={openAccount}
+                  onEditAsset={setAssetEditing}
+                />
+              )}
+              {tab === 'assistant' && <Assistant messages={chat} setMessages={setChat} autoSend={aiPrompt} onAutoSent={() => setAiPrompt(null)} />}
             </section>
           </div>
         )}
@@ -348,8 +516,53 @@ function Dashboard() {
           onClose={() => setSelectedTxn(null)}
           onSave={saveTxnEdit}
           onDeleteRule={deleteRule}
+          onOpenMerchant={openMerchant}
         />
       )}
+
+      {data && (
+        <>
+          <ReviewInbox
+            open={reviewOpen}
+            onClose={() => setReviewOpen(false)}
+            txns={reviewQueue}
+            rules={txnRules}
+            accountName={accountName}
+            onApprove={txns => { void setReviewed(txns); }}
+            onCategory={reviewCategory}
+            onSelect={setSelectedTxn}
+          />
+          <MonthlyRecapSheet
+            month={recapMonth}
+            setMonth={setRecapMonth}
+            data={data}
+            rules={txnRules}
+            recurring={recurring}
+            onClose={() => setRecapMonth(null)}
+            onDrill={setDrill}
+            onSelect={setSelectedTxn}
+            onAskAI={askAI}
+          />
+          <DrillSheet
+            drill={drill}
+            data={data}
+            rules={txnRules}
+            accountName={accountName}
+            onClose={() => setDrill(null)}
+            onSelect={setSelectedTxn}
+          />
+        </>
+      )}
+
+      <AssetEditor
+        key={`asset-${assetEditing === 'new' ? 'new' : assetEditing?.id ?? 'none'}`}
+        asset={assetEditing}
+        onClose={() => setAssetEditing(null)}
+        onSave={saveAsset}
+        onDelete={deleteAsset}
+      />
+
+      <Toast toast={toast} onDone={clearToast} />
 
       {/* Mobile bottom tab bar */}
       {data?.linked && (
@@ -385,7 +598,7 @@ function IconButton({ label, children, ...props }: { label: string; children: Re
   );
 }
 
-function LinkMenu({ onPick, busy }: { onPick: (kind: LinkKind) => void; busy: boolean }) {
+function LinkMenu({ onPick, onAddAsset, busy }: { onPick: (kind: LinkKind) => void; onAddAsset: () => void; busy: boolean }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -422,6 +635,14 @@ function LinkMenu({ onPick, busy }: { onPick: (kind: LinkKind) => void; busy: bo
               </span>
             </button>
           ))}
+          <div className="border-t border-line my-1" />
+          <button onClick={onAddAsset} className="w-full flex items-start gap-3 p-3 rounded-xl hover:bg-sunken text-left">
+            <House size={18} className="text-accent mt-0.5 shrink-0" />
+            <span>
+              <span className="block font-semibold text-ink text-sm">Add an asset by hand</span>
+              <span className="block text-xs text-muted mt-0.5">Home, car, crypto wallet, valuables…</span>
+            </span>
+          </button>
         </div>
       )}
     </div>
@@ -444,7 +665,10 @@ function Banner({ tone, children, action }: { tone: 'warn' | 'ok'; children: Rea
 function LinkStatus({ status, error, onClose }: { status: string; error: string | null; onClose: () => void }) {
   if (status === 'idle') return null;
   if (status === 'preparing') return null;
-  const text = status === 'linking' ? 'Connecting your account…' : status === 'linked' ? 'Account linked! Loading your new data…' : error || 'Failed to link the account. Please try again.';
+  const text = status === 'linking' ? 'Connecting your account…'
+    : status === 'linked' ? 'Account linked! Loading your new data…'
+    : status === 'reconnected' ? 'Reconnected! Syncing your latest data…'
+    : error || 'Failed to link the account. Please try again.';
   return (
     <div className="mb-5">
       <Banner tone={status === 'error' ? 'warn' : 'ok'} action={<button onClick={onClose} aria-label="Dismiss"><X size={16} /></button>}>

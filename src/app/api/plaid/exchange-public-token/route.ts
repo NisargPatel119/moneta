@@ -22,9 +22,13 @@ export async function POST(request: Request) {
 
     // 2. Save it securely to our Neon Postgres database
     await ensureSchema();
+    // Remember the bank's name, so it can still be named if the connection breaks later
+    const institution = await plaidClient.itemGet({ access_token: accessToken })
+      .then(r => r.data.item.institution_name ?? null)
+      .catch(() => null);
     await sql`
-      INSERT INTO plaid_items (access_token, item_id)
-      VALUES (${accessToken}, ${itemId})
+      INSERT INTO plaid_items (access_token, item_id, institution_name)
+      VALUES (${accessToken}, ${itemId}, ${institution})
     `;
 
     clearFinancialCache();

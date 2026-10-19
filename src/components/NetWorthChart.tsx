@@ -1,8 +1,11 @@
 'use client';
 import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { dayKey, formatCompact, formatMoney, parseDay, type NetWorthPoint } from '@/lib/finance';
+import { dayKey, formatCompact, formatMoney, parseDay, type NetWorthBucket, type NetWorthPoint } from '@/lib/finance';
+import type { NetWorthChange } from '@/lib/insights';
 import { Money, cn, usePrivacy } from './ui';
+import { NetWorthChangeBreakdown } from './NetWorthChange';
 
 const RANGES = [
   { id: '1M', days: 31 },
@@ -13,8 +16,15 @@ const RANGES = [
 
 const LINE = 'var(--accent)';
 
-export function NetWorthChart({ history, current }: { history: NetWorthPoint[]; current: number }) {
-  const [range, setRange] = useState<(typeof RANGES)[number]['id']>('3M');
+export function NetWorthChart({ history, current, explain, onBucket }: {
+  history: NetWorthPoint[];
+  current: number;
+  /** Breaks the change since a day into cash, investments, debts… */
+  explain?: (fromDay: string) => NetWorthChange | null;
+  onBucket?: (bucket: NetWorthBucket) => void;
+}) {
+  const [range, setRange] = useState<(typeof RANGES)[number]['id']>('1M');
+  const [showWhy, setShowWhy] = useState(true);
   const { hidden } = usePrivacy();
 
   if (history.length < 2) {
@@ -33,6 +43,8 @@ export function NetWorthChart({ history, current }: { history: NetWorthPoint[]; 
   const first = points[0]?.netWorth ?? current;
   const change = current - first;
   const pct = first !== 0 ? change / Math.abs(first) : 0;
+
+  const why = explain?.(points[0]?.date ?? cutoff);
 
   const data = points.map(p => ({
     label: parseDay(p.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -77,6 +89,15 @@ export function NetWorthChart({ history, current }: { history: NetWorthPoint[]; 
           </AreaChart>
         </ResponsiveContainer>
       </div>
+      {why && why.buckets.length > 0 && (
+        <div className="mt-4 rounded-xl bg-sunken/60 p-3">
+          <button onClick={() => setShowWhy(v => !v)} aria-expanded={showWhy} className="w-full flex items-center justify-between text-left">
+            <span className="eyebrow text-muted">What changed</span>
+            <ChevronDown size={16} className={cn('text-muted transition-transform', showWhy && 'rotate-180')} />
+          </button>
+          {showWhy && <div className="mt-3"><NetWorthChangeBreakdown change={why} onBucket={onBucket} /></div>}
+        </div>
+      )}
     </div>
   );
 }

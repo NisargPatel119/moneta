@@ -11,7 +11,9 @@ const SECTIONS: { kind: RecurringKind; title: string; empty: string }[] = [
   { kind: 'income', title: 'Income', empty: 'No regular income found yet.' },
 ];
 
-export function Recurring({ items, dismissedCount, onDismiss, onRestoreAll }: {
+export function Recurring({ items, dismissedCount, onDismiss, onRestoreAll, onOpen }: {
+  /** Show every charge from this merchant */
+  onOpen: (item: RecurringItem) => void;
   items: RecurringItem[];
   dismissedCount: number;
   onDismiss: (key: string) => void;
@@ -66,7 +68,7 @@ export function Recurring({ items, dismissedCount, onDismiss, onRestoreAll }: {
               <p className="px-5 pb-5 text-sm text-muted">{section.empty}</p>
             ) : (
               <ul className="divide-y divide-line">
-                {list.map(item => <RecurringRow key={item.key} item={item} onDismiss={onDismiss} />)}
+                {list.map(item => <RecurringRow key={item.key} item={item} onDismiss={onDismiss} onOpen={() => onOpen(item)} />)}
               </ul>
             )}
           </Card>
@@ -83,7 +85,7 @@ export function Recurring({ items, dismissedCount, onDismiss, onRestoreAll }: {
   );
 }
 
-function RecurringRow({ item, onDismiss }: { item: RecurringItem; onDismiss: (key: string) => void }) {
+function RecurringRow({ item, onDismiss, onOpen }: { item: RecurringItem; onDismiss: (key: string) => void; onOpen: () => void }) {
   // TransactionIcon only needs the logo and category; build the minimal shape it reads
   const iconTxn = { logo_url: item.logo_url, personal_finance_category: null, user_category: null } as unknown as Txn;
   const daysAway = Math.round((parseDay(item.nextDate).getTime() - parseDay(dayKey(new Date())).getTime()) / 86_400_000);
@@ -91,6 +93,7 @@ function RecurringRow({ item, onDismiss }: { item: RecurringItem; onDismiss: (ke
 
   return (
     <li className="flex items-center gap-3 px-4 sm:px-5 py-3 group">
+      <button onClick={onOpen} className="flex flex-1 min-w-0 items-center gap-3 text-left" aria-label={`See every ${item.name} charge`}>
       <TransactionIcon t={iconTxn} categoryKey={item.groupKey} />
       <div className="min-w-0 flex-1">
         <p className="font-semibold text-ink truncate">{item.name}</p>
@@ -109,6 +112,7 @@ function RecurringRow({ item, onDismiss }: { item: RecurringItem; onDismiss: (ke
           </p>
         )}
       </div>
+      </button>
       <button
         onClick={() => onDismiss(item.key)}
         title="Not recurring"

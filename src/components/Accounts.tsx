@@ -1,7 +1,10 @@
 'use client';
 import { useState } from 'react';
-import { Banknote, CreditCard, LineChart, Unlink, Wallet, type LucideIcon } from 'lucide-react';
-import { ACCOUNT_TYPE_LABELS, ACCOUNT_TYPE_ORDER, type Account, type DashboardData, isLiability } from '@/lib/finance';
+import { Banknote, ChevronRight, CreditCard, House, LineChart, Plus, RefreshCw, TriangleAlert, Unlink, Wallet, type LucideIcon } from 'lucide-react';
+import {
+  ACCOUNT_TYPE_LABELS, ACCOUNT_TYPE_ORDER, ASSET_KIND_META, type Account, type DashboardData, type ManualAsset, isLiability, timeAgo,
+} from '@/lib/finance';
+import type { ReconnectMode } from './usePlaidConnect';
 import { Card, Money, cn } from './ui';
 
 const TYPE_ICONS: Record<string, LucideIcon> = {
@@ -11,7 +14,14 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   loan: Banknote,
 };
 
-export function Accounts({ data, onChanged }: { data: DashboardData; onChanged: () => void }) {
+export function Accounts({ data, onChanged, onReconnect, reconnecting, onAccount, onEditAsset }: {
+  data: DashboardData;
+  onChanged: () => void;
+  onReconnect: (itemId: string, mode: ReconnectMode) => void;
+  reconnecting: boolean;
+  onAccount: (a: Account) => void;
+  onEditAsset: (asset: ManualAsset | 'new') => void;
+}) {
   const groups = ACCOUNT_TYPE_ORDER
     .map(type => {
       const accounts = data.accounts.filter(a => (a.type ?? 'other') === type);
@@ -38,25 +48,70 @@ export function Accounts({ data, onChanged }: { data: DashboardData; onChanged: 
               </div>
             </div>
             <Card className="divide-y divide-line overflow-hidden">
-              {g.accounts.map(a => <AccountRow key={a.account_id} a={a} />)}
+              {g.accounts.map(a => <AccountRow key={a.account_id} a={a} onOpen={() => onAccount(a)} />)}
             </Card>
           </section>
         );
       })}
 
-      <Connections data={data} onChanged={onChanged} />
+      <ManualAssets assets={data.manualAssets ?? []} onEdit={onEditAsset} />
+      <Connections data={data} onChanged={onChanged} onReconnect={onReconnect} reconnecting={reconnecting} />
     </div>
   );
 }
 
-// One row per linked institution (Plaid "Item"), with a way to disconnect it
-function Connections({ data, onChanged }: { data: DashboardData; onChanged: () => void }) {
+// Things the user tracks by hand (home, car, crypto…)
+function ManualAssets({ assets, onEdit }: { assets: ManualAsset[]; onEdit: (asset: ManualAsset | 'new') => void }) {
+  const total = assets.reduce((s, a) => s + a.value, 0);
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3 px-1">
+        <div className="flex items-center gap-2">
+          <House size={18} className="text-accent" />
+          <h3 className="font-bold text-ink">Property & other assets</h3>
+          {assets.length > 0 && <span className="bg-line text-muted text-xs font-bold px-2 py-0.5 rounded-full">{assets.length}</span>}
+        </div>
+        {assets.length > 0 && <Money value={total} className="font-bold text-positive" />}
+      </div>
+      <Card className="divide-y divide-line overflow-hidden">
+        {assets.map(a => {
+          const meta = ASSET_KIND_META[a.kind];
+          const Icon = meta.icon;
+          return (
+            <button key={a.id} onClick={() => onEdit(a)} className="w-full flex items-center gap-3 p-4 sm:p-5 text-left hover:bg-sunken">
+              <span className="w-10 h-10 rounded-xl bg-accent-soft text-accent flex items-center justify-center shrink-0"><Icon size={18} /></span>
+              <span className="flex-1 min-w-0">
+                <span className="block font-semibold text-ink truncate">{a.name}</span>
+                <span className="block text-xs text-muted font-medium mt-0.5 truncate">
+                  {meta.label}
+                  {a.annual_rate ? <> · est. {a.annual_rate > 0 ? '+' : ''}{a.annual_rate}%/yr</> : <> · entered by you</>}
+                </span>
+              </span>
+              <Money value={a.value} className="font-bold text-lg text-positive shrink-0" />
+            </button>
+          );
+        })}
+        <button onClick={() => onEdit('new')} className="w-full flex items-center gap-3 p-4 sm:p-5 text-left text-accent font-semibold hover:bg-sunken">
+          <span className="w-10 h-10 rounded-xl border border-dashed border-accent/50 flex items-center justify-center shrink-0"><Plus size={18} /></span>
+          <span>
+            Add a home, car, or other asset
+            <span className="block text-xs text-muted font-medium mt-0.5">Track things your bank can&apos;t see, so your net worth is complete</span>
+          </span>
+        </button>
+      </Card>
+    </section>
+  );
+}
+
+// One row per linked institution (Plaid "Item"): sync status, reconnect, disconnect
+function Connections({ data, onChanged, onReconnect, reconnecting }: {
+  data: DashboardData;
+  onChanged: () => void;
+  onReconnect: (itemId: string, mode: ReconnectMode) => void;
+  reconnecting: boolean;
+}) {
   const [removing, setRemoving] = useState<string | null>(null);
-  const connections = [...new Map(data.accounts.map(a => [a.item_id, a])).values()].map(a => ({
-    item_id: a.item_id,
-    institution: a.institution,
-    count: data.accounts.filter(x => x.item_id === a.item_id).length,
-  }));
+  const connections = data.connections ?? [];
   if (connections.length === 0) return null;
 
   async function remove(itemId: string, institution: string) {
@@ -76,27 +131,47 @@ function Connections({ data, onChanged }: { data: DashboardData; onChanged: () =
     <section>
       <h3 className="font-bold text-ink mb-3 px-1">Connections</h3>
       <Card className="divide-y divide-line overflow-hidden">
-        {connections.map(c => (
-          <div key={c.item_id} className="flex items-center justify-between gap-3 p-4 sm:p-5">
-            <div>
-              <p className="font-semibold text-ink">{c.institution}</p>
-              <p className="text-xs text-muted font-medium">{c.count} account{c.count === 1 ? '' : 's'}</p>
+        {connections.map(c => {
+          const needsFix = c.status === 'reconnect' || c.status === 'consent';
+          return (
+            <div key={c.item_id} className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
+              <div className="min-w-0">
+                <p className="font-semibold text-ink">{c.institution}</p>
+                <p className={cn('text-xs font-medium flex items-center gap-1', c.status === 'ok' ? 'text-muted' : 'text-warn')}>
+                  {c.status !== 'ok' && <TriangleAlert size={12} className="shrink-0" />}
+                  {c.status === 'reconnect' ? 'Needs you to sign in again'
+                    : c.status === 'consent' ? 'Needs permission to share investments'
+                    : c.status === 'error' ? (c.message ?? 'Having trouble syncing')
+                    : <>{c.accountCount} account{c.accountCount === 1 ? '' : 's'}{c.lastSyncedAt && <> · synced {timeAgo(c.lastSyncedAt)}</>}</>}
+                </p>
+              </div>
+              <div className="flex items-center gap-1">
+                {needsFix && (
+                  <button
+                    onClick={() => onReconnect(c.item_id, c.status === 'consent' ? 'consent' : 'reconnect')}
+                    disabled={reconnecting}
+                    className="flex items-center gap-1.5 text-sm font-semibold bg-accent text-on-accent px-3 py-2 rounded-xl hover:bg-accent-strong disabled:opacity-50"
+                  >
+                    <RefreshCw size={15} /> {c.status === 'consent' ? 'Allow access' : 'Reconnect'}
+                  </button>
+                )}
+                <button
+                  onClick={() => remove(c.item_id, c.institution)}
+                  disabled={removing === c.item_id}
+                  className="flex items-center gap-1.5 text-sm font-semibold text-negative hover:bg-negative-soft px-3 py-2 rounded-xl disabled:opacity-50"
+                >
+                  <Unlink size={16} /> {removing === c.item_id ? 'Removing…' : 'Disconnect'}
+                </button>
+              </div>
             </div>
-            <button
-              onClick={() => remove(c.item_id, c.institution)}
-              disabled={removing === c.item_id}
-              className="flex items-center gap-1.5 text-sm font-semibold text-negative hover:bg-negative-soft px-3 py-2 rounded-xl disabled:opacity-50"
-            >
-              <Unlink size={16} /> {removing === c.item_id ? 'Removing…' : 'Disconnect'}
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </Card>
     </section>
   );
 }
 
-function AccountRow({ a }: { a: Account }) {
+function AccountRow({ a, onOpen }: { a: Account; onOpen: () => void }) {
   const liability = isLiability(a);
   const limit = a.type === 'credit' ? a.balances.limit : null;
   const used = a.balances.current ?? 0;
@@ -106,7 +181,7 @@ function AccountRow({ a }: { a: Account }) {
   const showAvailable = a.type === 'depository' && a.balances.available != null && a.balances.available !== a.balances.current;
 
   return (
-    <div className="p-4 sm:p-5">
+    <button onClick={onOpen} className="w-full text-left block p-4 sm:p-5 hover:bg-sunken transition-colors">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-semibold text-ink truncate">{a.name}</p>
@@ -116,11 +191,14 @@ function AccountRow({ a }: { a: Account }) {
             {a.mask && <> · ••{a.mask}</>}
           </p>
         </div>
-        <div className="text-right shrink-0">
-          <Money value={a.balances.current} className={cn('font-bold text-lg', liability ? 'text-ink' : 'text-positive')} />
-          {showAvailable && (
-            <p className="text-xs text-muted font-medium"><Money value={a.balances.available} /> available</p>
-          )}
+        <div className="flex items-start gap-1 shrink-0">
+          <div className="text-right">
+            <Money value={a.balances.current} className={cn('font-bold text-lg', liability ? 'text-ink' : 'text-positive')} />
+            {showAvailable && (
+              <p className="text-xs text-muted font-medium"><Money value={a.balances.available} /> available</p>
+            )}
+          </div>
+          <ChevronRight size={18} className="text-faint mt-1" />
         </div>
       </div>
 
@@ -135,6 +213,6 @@ function AccountRow({ a }: { a: Account }) {
           </div>
         </div>
       )}
-    </div>
+    </button>
   );
 }

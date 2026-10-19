@@ -1,11 +1,14 @@
 'use client';
 import { useMemo } from 'react';
-import { ArrowDownRight, ArrowUpRight, CalendarClock, ChevronRight, TrendingDown, TrendingUp } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, CalendarClock, ChevronRight, Inbox, TrendingDown, TrendingUp } from 'lucide-react';
 import {
-  type DashboardData, type Txn, dayKey, friendlyDay, isLiability, lastMonthSameDaySpending, monthRange, inRange,
-  spendingByCategory, sumIncome, sumSpending,
+  type DashboardData, type NetWorthBucket, type Txn, dayKey, friendlyDay, isIncome, isLiability, lastMonthSameDaySpending,
+  monthRange, inRange, spendingByCategory, sumIncome, sumSpending,
 } from '@/lib/finance';
-import { Card, Money, SectionTitle, cn, tint } from './ui';
+import { netWorthChange, type MonthlyRecap } from '@/lib/insights';
+import { Card, DrillButton, Money, SectionTitle, cn, tint } from './ui';
+import type { Drill } from './DrillSheet';
+import { RecapCard } from './MonthlyRecap';
 import { TransactionList } from './TransactionList';
 import type { TxnRules } from '@/lib/transfers';
 import { projectOccurrences, type RecurringItem } from '@/lib/recurring';
@@ -14,7 +17,7 @@ import { NetWorthChart } from './NetWorthChart';
 // Validated categorical slots (dataviz palette): blue, aqua, orange
 const MIX_COLORS = { cash: 'var(--series-1)', investments: 'var(--series-3)', other: 'var(--series-2)' };
 
-export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSelect, accountName }: {
+export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSelect, accountName, onDrill, recap, onOpenRecap, reviewCount, onOpenReview }: {
   recurring: RecurringItem[];
   onOpenRecurring: () => void;
   onSelect: (t: Txn) => void;
@@ -22,6 +25,12 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
   rules: TxnRules;
   goTo: (tab: 'spending' | 'accounts' | 'investments', category?: string) => void;
   accountName: (id: string) => string | undefined;
+  onDrill: (d: Drill) => void;
+  /** Last month's recap (null without enough data) */
+  recap: MonthlyRecap | null;
+  onOpenRecap: () => void;
+  reviewCount: number;
+  onOpenReview: () => void;
 }) {
   const stats = useMemo(() => {
     const thisMonth = data.transactions.filter(t => inRange(t, monthRange(0)));
@@ -38,6 +47,8 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
       else if (a.type === 'investment') mix.investments += bal;
       else mix.other += bal;
     }
+    // A home, car, or anything else entered by hand
+    for (const a of data.manualAssets ?? []) mix.other += a.value;
     // Same security across several accounts counts as one position
     const positions = new Map<string, { label: string; value: number }>();
     for (const h of data.holdings ?? []) {
@@ -48,22 +59,52 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
     const holdingsTotal = [...positions.values()].reduce((s, p) => s + p.value, 0);
     const topHoldings = [...positions.values()].sort((a, b) => b.value - a.value).slice(0, 5);
 
-    return { spent, lastPace, income, categories, mix, topHoldings, holdingsTotal };
+    return { spent, lastPace, income, categories, mix, topHoldings, holdingsTotal, thisMonth };
   }, [data, rules]);
+
+  const thisMonthDrill = (title: string, kind: 'spending' | 'income'): Drill => ({
+    kind: 'txns',
+    title,
+    subtitle: `${monthName} so far`,
+    txns: stats.thisMonth.filter(t => (kind === 'income' ? isIncome(t) : rules.isSpending(t))),
+    total: kind,
+  });
+
+  // Net worth buckets map to tabs: debts and property live under Accounts
+  const openBucket = (bucket: NetWorthBucket) => goTo(bucket === 'investments' ? 'investments' : 'accounts');
 
   const paceDiff = stats.spent - stats.lastPace;
   const monthName = new Date().toLocaleDateString('en-US', { month: 'long' });
   const mixEntries = ([
-    ['cash', 'Cash'], ['investments', 'Investments'], ['other', 'Other'],
+    ['cash', 'Cash'], ['investments', 'Investments'], ['other', 'Property & other'],
   ] as const).filter(([k]) => stats.mix[k] > 0);
 
   return (
     <div className="space-y-5">
+      {reviewCount > 0 && (
+        <button
+          onClick={onOpenReview}
+          className="w-full flex items-center gap-3 rounded-2xl border border-accent/30 bg-accent-soft p-4 text-left hover:brightness-[0.98]"
+        >
+          <span className="w-10 h-10 rounded-xl bg-accent text-on-accent flex items-center justify-center shrink-0"><Inbox size={18} /></span>
+          <span className="flex-1 min-w-0">
+            <span className="block font-semibold text-ink">{reviewCount} new transaction{reviewCount === 1 ? '' : 's'} to review</span>
+            <span className="block text-xs text-muted mt-0.5">A quick look keeps your categories and totals right</span>
+          </span>
+          <ChevronRight size={18} className="text-accent shrink-0" />
+        </button>
+      )}
+
       {/* Net worth hero */}
       <Card className="p-6 sm:p-8">
         <p className="text-muted eyebrow">Net worth</p>
         <Money value={data.netWorth} className="block font-display text-5xl sm:text-6xl tracking-tight text-ink mt-2 leading-none" />
-        <NetWorthChart history={data.history ?? []} current={data.netWorth} />
+        <NetWorthChart
+          history={data.history ?? []}
+          current={data.netWorth}
+          explain={fromDay => netWorthChange(data.history ?? [], fromDay, dayKey(new Date()), data.transactions, rules)}
+          onBucket={openBucket}
+        />
 
         <div className="grid grid-cols-2 gap-3 mt-6">
           <button onClick={() => goTo('accounts')} className="text-left rounded-2xl bg-sunken p-4 hover:bg-sunken transition-colors">
@@ -102,7 +143,9 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
         )}
       </Card>
 
-      <UpcomingCard recurring={recurring} onOpen={onOpenRecurring} />
+      {recap && <RecapCard recap={recap} onOpen={onOpenRecap} />}
+
+      <UpcomingCard recurring={recurring} onOpen={onOpenRecurring} onItem={item => onDrill({ kind: 'merchant', key: item.key, name: item.name })} />
 
       {stats.topHoldings.length > 0 && (
         <Card className="p-6">
@@ -130,14 +173,14 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
         <Card className="p-6">
           <SectionTitle>{monthName} so far</SectionTitle>
           <div className="flex items-end justify-between gap-4">
-            <div>
+            <DrillButton onClick={() => onDrill(thisMonthDrill('Spending', 'spending'))} label="See this month's spending">
               <p className="text-sm text-muted font-medium">Spent</p>
               <Money value={stats.spent} className="block text-4xl font-display font-normal tracking-tight text-ink" />
-            </div>
-            <div className="text-right">
+            </DrillButton>
+            <DrillButton onClick={() => onDrill(thisMonthDrill('Income', 'income'))} className="text-right" label="See this month's income">
               <p className="text-sm text-muted font-medium">Income</p>
               <Money value={stats.income} className="block text-3xl font-display font-normal tracking-tight leading-none text-positive" />
-            </div>
+            </DrillButton>
           </div>
           {stats.lastPace > 0 && (
             <div className={cn(
@@ -208,7 +251,7 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
 }
 
 // Bills, subscriptions and paychecks expected in the next two weeks
-function UpcomingCard({ recurring, onOpen }: { recurring: RecurringItem[]; onOpen: () => void }) {
+function UpcomingCard({ recurring, onOpen, onItem }: { recurring: RecurringItem[]; onOpen: () => void; onItem: (item: RecurringItem) => void }) {
   const start = dayKey(new Date());
   const endDate = new Date();
   endDate.setDate(endDate.getDate() + 14);
@@ -230,15 +273,17 @@ function UpcomingCard({ recurring, onOpen }: { recurring: RecurringItem[]; onOpe
       </p>
       <ul className="divide-y divide-line">
         {upcoming.slice(0, 6).map(o => (
-          <li key={`${o.item.key}-${o.date}`} className="flex items-center justify-between gap-3 py-2.5">
-            <div className="min-w-0">
-              <p className="font-semibold text-ink truncate">{o.item.name}</p>
-              <p className="text-xs text-muted">{friendlyDay(o.date)}</p>
-            </div>
-            <span className={cn('font-semibold shrink-0', o.item.kind === 'income' ? 'text-positive' : 'text-ink')}>
-              {o.item.variable && <span className="text-faint font-medium">~</span>}
-              <Money value={o.item.kind === 'income' ? o.item.amount : -o.item.amount} signed />
-            </span>
+          <li key={`${o.item.key}-${o.date}`}>
+            <button onClick={() => onItem(o.item)} className="w-full flex items-center justify-between gap-3 py-2.5 text-left hover:bg-sunken -mx-2 px-2 rounded-lg">
+              <div className="min-w-0">
+                <p className="font-semibold text-ink truncate">{o.item.name}</p>
+                <p className="text-xs text-muted">{friendlyDay(o.date)}</p>
+              </div>
+              <span className={cn('font-semibold shrink-0', o.item.kind === 'income' ? 'text-positive' : 'text-ink')}>
+                {o.item.variable && <span className="text-faint font-medium">~</span>}
+                <Money value={o.item.kind === 'income' ? o.item.amount : -o.item.amount} signed />
+              </span>
+            </button>
           </li>
         ))}
       </ul>

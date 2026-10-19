@@ -36,13 +36,18 @@ So Moneta is money, memory, and good advice in one name. That's what this app tr
 
 - **Net worth at a glance:** assets, liabilities, and how your money is split between cash and investments.
 - **Net worth over time:** Moneta records your balances every day and charts your net worth over 1 month, 3 months, a year, or all time.
+- **What changed:** see where a net worth change came from (cash, investments, property, debts), including an estimate of market gains vs. money you added.
+- **Monthly recap:** income, spending, savings rate, categories above or below your usual, biggest one-off purchases, and new subscriptions, with an "Ask AI to explain this month" button.
+- **Review inbox:** new transactions wait for a quick look. Confirm the category with one tap or fix it, with Undo.
+- **Tap any number:** totals, chart days, accounts, and bills open the transactions behind them, and every merchant has its own page with a 12-month history.
+- **Manual assets:** add a home, car, crypto wallet, or valuables so your net worth is complete, with an optional yearly appreciation or depreciation estimate.
 - **Spending insights:** month-to-date spending vs. the same point last month, spending by category, a daily spending-pace chart, and searchable transactions.
 - **Your history, kept:** transactions are stored in your own database, so history keeps growing past what your bank shares, and your edits stick.
 - **Automatic categories you can edit:** tap any transaction to rename it, recategorize it, or add a note. Tick "Always do this" and Moneta creates a merchant rule that applies to past and future transactions.
 - **Smart transfers:** money moving between your own accounts is matched and hidden automatically. Choose which kinds of transfers (card payments, savings, P2P, buy now pay later, mortgage…) to hide and which to count as spending.
 - **Recurring & subscriptions:** bills, subscriptions, and paychecks are detected automatically, with next charge dates, price-increase alerts, and a bills calendar.
 - **Investments:** holdings across all your brokerages, combined by ticker, with allocation (stocks, ETFs, funds, bonds, cash), gain/loss, and portfolio weight.
-- **Accounts:** balances grouped by type, credit card utilization, and connect/disconnect controls.
+- **Accounts:** balances grouped by type, credit card utilization, sync status per bank, one-tap **Reconnect** when a bank needs you to sign in again, and connect/disconnect controls.
 - **Ask AI:** chat with an AI model about your own data: *"Where did my money go last month?"*, *"Do I have recurring subscriptions?"*, *"Is my portfolio concentrated?"*
 - **Built for your phone:** works great on iPhone/Android. Add it to your home screen and it opens like an app.
 - **Privacy touches:** a one-tap "hide amounts" blur for checking your balance in public, and an adjustable text size.
