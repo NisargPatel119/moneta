@@ -1,10 +1,13 @@
 import { ensureSchema, sql } from '@/lib/db';
 import { sanitizeTransferRules, type TransferRules } from '@/lib/transfers';
+import { sanitizePlan, type ForecastPlan } from '@/lib/forecast';
 
 export type AppSettings = {
   transferRules: TransferRules;
   /** Merchant keys the user said aren't really recurring */
   dismissedRecurring: string[];
+  /** Inputs and assumptions for the net worth forecast */
+  forecastPlan: ForecastPlan;
 };
 
 function sanitizeDismissed(input: unknown): string[] {
@@ -14,12 +17,13 @@ function sanitizeDismissed(input: unknown): string[] {
 export async function getSettings(): Promise<AppSettings> {
   await ensureSchema();
   const rows = (await sql`
-    SELECT key, value FROM app_settings WHERE key IN ('transfer_rules', 'dismissed_recurring')
+    SELECT key, value FROM app_settings WHERE key IN ('transfer_rules', 'dismissed_recurring', 'forecast_plan')
   `) as { key: string; value: unknown }[];
   const get = (key: string) => rows.find(r => r.key === key)?.value;
   return {
     transferRules: sanitizeTransferRules(get('transfer_rules')),
     dismissedRecurring: sanitizeDismissed(get('dismissed_recurring')),
+    forecastPlan: sanitizePlan(get('forecast_plan')),
   };
 }
 
@@ -36,5 +40,6 @@ async function save(key: string, value: unknown) {
 export async function saveSettings(input: Partial<Record<keyof AppSettings, unknown>>): Promise<AppSettings> {
   if ('transferRules' in input) await save('transfer_rules', sanitizeTransferRules(input.transferRules));
   if ('dismissedRecurring' in input) await save('dismissed_recurring', sanitizeDismissed(input.dismissedRecurring));
+  if ('forecastPlan' in input) await save('forecast_plan', sanitizePlan(input.forecastPlan));
   return getSettings();
 }

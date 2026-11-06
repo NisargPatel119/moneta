@@ -9,6 +9,7 @@ import { netWorthChange, type MonthlyRecap } from '@/lib/insights';
 import { Card, DrillButton, Money, SectionTitle, cn, tint } from './ui';
 import type { Drill } from './DrillSheet';
 import { RecapCard } from './MonthlyRecap';
+import { ForecastCard } from './Forecast';
 import { TransactionList } from './TransactionList';
 import type { TxnRules } from '@/lib/transfers';
 import { projectOccurrences, type RecurringItem } from '@/lib/recurring';
@@ -17,7 +18,7 @@ import { NetWorthChart } from './NetWorthChart';
 // Validated categorical slots (dataviz palette): blue, aqua, orange
 const MIX_COLORS = { cash: 'var(--series-1)', investments: 'var(--series-3)', other: 'var(--series-2)' };
 
-export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSelect, accountName, onDrill, recap, onOpenRecap, reviewCount, onOpenReview }: {
+export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSelect, accountName, onDrill, recap, onOpenRecap, reviewCount, onOpenReview, onOpenForecast }: {
   recurring: RecurringItem[];
   onOpenRecurring: () => void;
   onSelect: (t: Txn) => void;
@@ -31,6 +32,7 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
   onOpenRecap: () => void;
   reviewCount: number;
   onOpenReview: () => void;
+  onOpenForecast: () => void;
 }) {
   const stats = useMemo(() => {
     const thisMonth = data.transactions.filter(t => inRange(t, monthRange(0)));
@@ -142,6 +144,8 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
           </div>
         )}
       </Card>
+
+      <ForecastCard data={data} rules={rules} onOpen={onOpenForecast} />
 
       {recap && <RecapCard recap={recap} onOpen={onOpenRecap} />}
 

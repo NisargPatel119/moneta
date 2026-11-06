@@ -1,8 +1,12 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { LineChart, Plus } from 'lucide-react';
+import { ChevronRight, LineChart, Plus } from 'lucide-react';
 import { type DashboardData, type HoldingRow, SECURITY_TYPE_LABELS } from '@/lib/finance';
 import { Card, Money, SectionTitle, cn, usePrivacy, tint } from './ui';
+import {
+  FilterBar, FilterSheet, HoldingSheet, ValueChart, activeFilterCount, filterAccounts, filteredHistory, typeKey,
+  useInvestmentFilters, type HoldingDetail,
+} from './InvestmentInsights';
 
 // Validated categorical palette (dataviz skill), assigned in fixed order by type, so a
 // filter that removes a type never repaints the others.
@@ -21,14 +25,33 @@ type Combined = HoldingRow & { gain: number | null; accounts: number };
 type Sort = 'value' | 'gain' | 'name';
 
 export function Investments({ data, onLinkBrokerage }: { data: DashboardData; onLinkBrokerage: () => void }) {
-  const [accountId, setAccountId] = useState('all');
   const [sort, setSort] = useState<Sort>('value');
+  const [filters, setFilters] = useInvestmentFilters();
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [selected, setSelected] = useState<HoldingDetail | null>(null);
   const { hidden } = usePrivacy();
 
-  const investmentAccounts = data.accounts.filter(a => a.type === 'investment' && data.holdings.some(h => h.account_id === a.account_id));
+  const investmentAccounts = useMemo(
+    () => data.accounts.filter(a => a.type === 'investment' && data.holdings.some(h => h.account_id === a.account_id)),
+    [data.accounts, data.holdings]
+  );
+  // Accounts that pass the account, institution and taxable/retirement filters
+  const shownAccounts = useMemo(() => new Set(filterAccounts(investmentAccounts, filters).map(a => a.account_id)), [investmentAccounts, filters]);
+  const typeMatches = useMemo(
+    () => (filters.types.length === 0 ? null : (type: string) => filters.types.includes(typeKey(type, TYPE_ORDER))),
+    [filters.types]
+  );
+  const filteredRows = useMemo(
+    () => data.holdings.filter(h => shownAccounts.has(h.account_id) && (!typeMatches || typeMatches(h.type))),
+    [data.holdings, shownAccounts, typeMatches]
+  );
+  const historyPoints = useMemo(
+    () => (data.investmentHistory ? filteredHistory(data.investmentHistory, shownAccounts, typeMatches) : []),
+    [data.investmentHistory, shownAccounts, typeMatches]
+  );
 
   const holdings = useMemo(() => {
-    const rows = data.holdings.filter(h => accountId === 'all' || h.account_id === accountId);
+    const rows = filteredRows;
     // Combine the same security held in several accounts
     const bySecurity = new Map<string, Combined>();
     for (const h of rows) {
@@ -45,7 +68,7 @@ export function Investments({ data, onLinkBrokerage }: { data: DashboardData; on
     const combined = [...bySecurity.values()];
     for (const h of combined) h.gain = h.cost_basis != null && !h.is_cash ? h.value - h.cost_basis : null;
     return combined;
-  }, [data.holdings, accountId]);
+  }, [filteredRows]);
 
   const sorted = useMemo(() => [...holdings].sort((a, b) =>
     sort === 'name' ? (a.ticker ?? a.name).localeCompare(b.ticker ?? b.name)
@@ -58,7 +81,7 @@ export function Investments({ data, onLinkBrokerage }: { data: DashboardData; on
   const totalGain = withBasis.reduce((s, h) => s + (h.gain ?? 0), 0);
   const totalBasis = withBasis.reduce((s, h) => s + (h.cost_basis ?? 0), 0);
   const gainPct = totalBasis > 0 ? totalGain / totalBasis : null;
-  const accountCount = accountId === 'all' ? new Set(data.holdings.map(h => h.account_id)).size : 1;
+  const accountCount = new Set(filteredRows.map(h => h.account_id)).size;
   const cashPct = total > 0 ? (holdings.filter(h => h.is_cash).reduce((s, h) => s + h.value, 0) / total) * 100 : 0;
 
   const allocation = TYPE_ORDER
@@ -69,6 +92,20 @@ export function Investments({ data, onLinkBrokerage }: { data: DashboardData; on
       value: holdings.filter(h => (TYPE_ORDER.includes(h.type) ? h.type : 'other') === type).reduce((s, h) => s + h.value, 0),
     }))
     .filter(a => a.value > 0);
+
+  // Every asset type in the holdings, for the filter sheet (colors stay fixed per type)
+  const presentTypes = TYPE_ORDER
+    .filter(type => data.holdings.some(h => typeKey(h.type, TYPE_ORDER) === type))
+    .map(type => ({ type, label: SECURITY_TYPE_LABELS[type] ?? type, color: TYPE_COLORS[type] ?? OTHER_COLOR }));
+
+  const accountName = (id: string) => {
+    const a = data.accounts.find(x => x.account_id === id);
+    return a ? `${a.name}${a.mask ? ` ••${a.mask}` : ''}` : 'Account';
+  };
+  const openHolding = (h: Combined) => setSelected({
+    security_id: h.security_id, ticker: h.ticker, name: h.name, type: h.type, is_cash: h.is_cash,
+    positions: filteredRows.filter(r => r.security_id === h.security_id).map(r => ({ ...r, accountName: accountName(r.account_id) })),
+  });
 
   if (data.holdings.length === 0) {
     return (
@@ -90,18 +127,22 @@ export function Investments({ data, onLinkBrokerage }: { data: DashboardData; on
 
   return (
     <div className="space-y-5">
-      {investmentAccounts.length > 1 && (
-        <select
-          value={accountId}
-          onChange={e => setAccountId(e.target.value)}
-          className="w-full sm:w-auto sm:max-w-xs truncate bg-surface border border-line-strong text-ink text-sm rounded-xl p-2.5 font-medium outline-none focus:ring-2 focus:ring-accent"
-        >
-          <option value="all">All investment accounts</option>
-          {investmentAccounts.map(a => (
-            <option key={a.account_id} value={a.account_id}>{a.name}{a.mask ? ` ••${a.mask}` : ''}</option>
-          ))}
-        </select>
-      )}
+      <FilterBar filters={filters} setFilters={setFilters} accounts={investmentAccounts} onOpen={() => setFiltersOpen(true)} />
+
+      {holdings.length === 0 ? (
+        <Card className="p-8 text-center">
+          <p className="font-semibold text-ink">No holdings match these filters</p>
+          <button onClick={() => setFiltersOpen(true)} className="mt-2 text-sm font-semibold text-accent">Change filters</button>
+        </Card>
+      ) : (<>
+      <Card className="p-5 sm:p-6">
+        <ValueChart points={historyPoints} current={total} title={activeFilterCount(filters) > 0 ? 'Filtered value over time' : 'Portfolio value over time'} />
+        {typeMatches && data.investmentHistory?.typedSince && data.investmentHistory.typedSince > (data.investmentHistory.dates[0] ?? '') && (
+          <p className="text-[11px] text-faint mt-2">
+            With an asset-type filter, the chart starts when Moneta began recording individual holdings.
+          </p>
+        )}
+      </Card>
 
       {/* Totals */}
       <div className="grid grid-cols-2 gap-3">
@@ -179,7 +220,8 @@ export function Investments({ data, onLinkBrokerage }: { data: DashboardData; on
           {sorted.map(h => {
             const pct = h.gain != null && h.cost_basis ? h.gain / h.cost_basis : null;
             return (
-              <li key={h.security_id} className="flex items-center gap-3 px-4 sm:px-5 py-3">
+              <li key={h.security_id}>
+                <button onClick={() => openHolding(h)} className="w-full text-left flex items-center gap-3 px-4 sm:px-5 py-3 hover:bg-sunken transition-colors">
                 <div
                   className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-[10px] font-black tracking-tight"
                   style={{ backgroundColor: tint(TYPE_COLORS[h.type] ?? OTHER_COLOR), color: TYPE_COLORS[h.type] ?? OTHER_COLOR }}
@@ -202,8 +244,10 @@ export function Investments({ data, onLinkBrokerage }: { data: DashboardData; on
                       {pct != null && <> ({h.gain >= 0 ? '+' : '−'}{Math.abs(pct * 100).toFixed(1)}%)</>}
                     </p>
                   )}
-                  <p className="text-[11px] text-faint font-medium">{((h.value / total) * 100).toFixed(1)}% of portfolio</p>
+                  <p className="text-[11px] text-faint font-medium">{((h.value / total) * 100).toFixed(1)}% of {activeFilterCount(filters) > 0 ? 'shown' : 'portfolio'}</p>
                 </div>
+                <ChevronRight size={16} className="text-faint shrink-0" />
+                </button>
               </li>
             );
           })}
@@ -212,6 +256,17 @@ export function Investments({ data, onLinkBrokerage }: { data: DashboardData; on
           Prices come from your brokerage and may be delayed. Gains are based on the cost basis your brokerage reports.
         </p>
       </Card>
+      </>)}
+
+      <FilterSheet
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        filters={filters}
+        setFilters={setFilters}
+        accounts={investmentAccounts}
+        types={presentTypes}
+      />
+      <HoldingSheet holding={selected} total={total} onClose={() => setSelected(null)} />
     </div>
   );
 }

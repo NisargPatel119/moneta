@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Building2, CheckCircle2, ChartPie, Eye, EyeOff, House, Inbox, Landmark, LayoutDashboard, LogOut, Plus, Receipt,
-  RefreshCw, Sparkles, TriangleAlert, X,
+  RefreshCw, Sparkles, Telescope, TriangleAlert, X,
 } from 'lucide-react';
 import { logout } from '@/app/login/actions';
 import { type LinkKind, usePlaidConnect } from '@/components/usePlaidConnect';
@@ -10,6 +10,7 @@ import { Overview } from '@/components/Overview';
 import { Spending } from '@/components/Spending';
 import { Accounts } from '@/components/Accounts';
 import { Investments } from '@/components/Investments';
+import { Forecast } from '@/components/Forecast';
 import { Assistant, type ChatMessage } from '@/components/Assistant';
 import { SetupChecklist } from '@/components/SetupChecklist';
 import { TransferSettings } from '@/components/TransferSettings';
@@ -28,12 +29,13 @@ import {
   merchantKey, timeAgo,
 } from '@/lib/finance';
 
-type Tab = 'overview' | 'spending' | 'investments' | 'accounts' | 'assistant';
+type Tab = 'overview' | 'spending' | 'investments' | 'forecast' | 'accounts' | 'assistant';
 
 const TABS: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'spending', label: 'Spending', icon: Receipt },
   { id: 'investments', label: 'Investing', icon: ChartPie },
+  { id: 'forecast', label: 'Forecast', icon: Telescope },
   { id: 'accounts', label: 'Accounts', icon: Building2 },
   { id: 'assistant', label: 'Ask AI', icon: Sparkles },
 ];
@@ -436,6 +438,7 @@ function Dashboard() {
                   onOpenRecap={() => setRecapMonth(lastMonthRecap?.month ?? monthKey(-1))}
                   reviewCount={reviewQueue.length}
                   onOpenReview={() => setReviewOpen(true)}
+                  onOpenForecast={() => goTo('forecast')}
                 />
               )}
               {tab === 'spending' && (
@@ -475,6 +478,9 @@ function Dashboard() {
                     />
                   )}
                 </>
+              )}
+              {tab === 'forecast' && (
+                <Forecast data={data} rules={txnRules} onSavePlan={forecastPlan => saveSettings({ forecastPlan })} />
               )}
               {tab === 'investments' && <Investments data={data} onLinkBrokerage={() => plaid.start('brokerage')} />}
               {tab === 'accounts' && (
@@ -567,12 +573,12 @@ function Dashboard() {
       {/* Mobile bottom tab bar */}
       {data?.linked && (
         <nav className="md:hidden fixed bottom-0 inset-x-0 z-20 bg-surface/95 backdrop-blur border-t border-line pb-[env(safe-area-inset-bottom)]">
-          <div className="grid grid-cols-5">
+          <div className="grid grid-cols-6">
             {TABS.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 onClick={() => goTo(id)}
-                className={cn('flex flex-col items-center gap-1 py-2 text-[11px] font-semibold transition-colors', tab === id ? 'text-accent' : 'text-muted')}
+                className={cn('flex flex-col items-center gap-1 py-2 text-[10px] sm:text-[11px] font-semibold transition-colors', tab === id ? 'text-accent' : 'text-muted')}
               >
                 <Icon size={20} />
                 {label}

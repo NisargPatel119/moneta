@@ -12,7 +12,7 @@ export async function GET() {
   }
 }
 
-// Body: any of { transferRules, dismissedRecurring }
+// Body: any of { transferRules, dismissedRecurring, forecastPlan }
 export async function PUT(request: Request) {
   // Demo mode: pretend it worked; the page keeps the change for this visit only
   if (isDemo()) return NextResponse.json({ success: true, demo: true });

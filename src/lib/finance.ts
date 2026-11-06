@@ -1,5 +1,6 @@
 import type { AccountBase } from 'plaid';
 import type { HoldingRow } from './plaidData';
+import type { ForecastPlan } from './forecast';
 import { TRANSFER_META, type TransferRules, type TransferType, type TxnRules } from './transfers';
 import {
   ArrowLeftRight, Banknote, Bitcoin, Briefcase, Car, Coffee, Film, Gem, HeartPulse, Home, Hammer,
@@ -69,6 +70,17 @@ export function pointFromBuckets(date: string, byBucket: Record<NetWorthBucket, 
   return { date, assets, liabilities, netWorth: assets - liabilities, byBucket };
 }
 
+// Investment value per day, split by account and asset type (see investmentStore.ts)
+export type InvestmentHistory = {
+  dates: string[];
+  /** type null = an account total from before holdings were recorded (can't be split by type) */
+  series: { account_id: string; type: string | null; values: number[] }[];
+  /** First day holdings were recorded, so asset-type filters work from here on */
+  typedSince: string | null;
+};
+
+export type SecurityPoint = { date: string; value: number; quantity: number; price: number };
+
 export type DashboardIssue = { item_id: string; code: string; message: string; institution?: string };
 
 // One linked login at one institution (a Plaid "Item")
@@ -128,7 +140,8 @@ export type DashboardData = {
   issues: DashboardIssue[];
   connections: Connection[];
   manualAssets: ManualAsset[];
-  settings: { transferRules: TransferRules; dismissedRecurring: string[] };
+  investmentHistory: InvestmentHistory;
+  settings: { transferRules: TransferRules; dismissedRecurring: string[]; forecastPlan: ForecastPlan };
   rules: CategoryRule[];
   history: NetWorthPoint[];
   fetchedAt?: string;
@@ -259,6 +272,13 @@ export const ACCOUNT_TYPE_LABELS: Record<string, string> = {
 };
 
 export const ACCOUNT_TYPE_ORDER = ['depository', 'investment', 'credit', 'loan', 'other'];
+
+// Retirement and tax-advantaged accounts, by Plaid subtype (401k, IRA, Roth, HSA, 529…)
+const RETIREMENT_SUBTYPE = /401|403|457|ira|roth|sep|simple|keogh|pension|retirement|profit sharing|thrift|tsp|rrsp|rrif|lira|tfsa|hsa|529|education/i;
+
+export function isRetirementAccount(acc: Pick<AccountBase, 'subtype'>) {
+  return RETIREMENT_SUBTYPE.test(acc.subtype ?? '');
+}
 
 export function isLiability(acc: AccountBase) {
   return acc.type === 'credit' || acc.type === 'loan';

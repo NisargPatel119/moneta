@@ -1,6 +1,10 @@
 import type { FinancialData, HoldingRow } from './plaidData';
 import { DEFAULT_TRANSFER_RULES } from './transfers';
-import { dayKey, pointFromBuckets, projectAssetValue, type Connection, type ManualAsset, type NetWorthPoint, type Txn } from './finance';
+import { DEFAULT_PLAN } from './forecast';
+import {
+  dayKey, pointFromBuckets, projectAssetValue, type Connection, type ManualAsset, type NetWorthPoint, type SecurityPoint, type Txn,
+} from './finance';
+import { buildInvestmentHistory } from './investmentStore';
 
 // Demo mode: realistic, made-up finances so anyone can try Moneta (and take screenshots)
 // without connecting a bank. No Plaid, database, or password needed, and real data is never read.
@@ -120,7 +124,12 @@ export function getDemoData(): FinancialData {
     issues: [{ item_id: 'demo-harbor', code: 'ITEM_LOGIN_REQUIRED', institution: 'Harbor Investments', message: 'Harbor Investments needs you to sign in again.' }],
     connections,
     manualAssets,
-    settings: { transferRules: DEFAULT_TRANSFER_RULES, dismissedRecurring: [] },
+    investmentHistory: buildInvestmentHistory(
+      demoHoldingSnapshots(today, holdings).map(r => ({ date: r.date, account_id: r.account_id, type: r.type, value: r.value })),
+      [],
+    ),
+    // The demo household is in their mid-thirties
+    settings: { transferRules: DEFAULT_TRANSFER_RULES, dismissedRecurring: [], forecastPlan: { ...DEFAULT_PLAN, birthYear: today.getFullYear() - 35 } },
     rules: [],
     history: buildHistory(today, buckets),
     fetchedAt: today.toISOString(),
@@ -257,4 +266,57 @@ function buildHistory(today: Date, end: NetWorthPoint['byBucket']): NetWorthPoin
     points.push(pointFromBuckets(dayKey(d), { cash, investments, property, credit, loans }));
   }
   return points;
+}
+
+type DemoSnapshot = SecurityPoint & { account_id: string; security_id: string; type: string };
+let snapshotCache: { day: string; rows: DemoSnapshot[] } | null = null;
+
+// A year of daily holding values: each asset type follows its own market path, ending at today's prices
+function demoHoldingSnapshots(today: Date, holdings: HoldingRow[]): DemoSnapshot[] {
+  const todayKey = dayKey(today);
+  if (snapshotCache?.day === todayKey) return snapshotCache.rows;
+  const days = 365;
+  const paths = new Map<string, number[]>();
+  const pathFor = (type: string, seed: number, drift: number, vol: number) => {
+    const rand = rng(seed);
+    const steps = [0];
+    for (let i = 1; i < days; i++) steps.push(steps[i - 1] + drift / days + (rand() - 0.5) * vol);
+    // Re-anchor so the last day is exactly today's price
+    return steps.map(x => Math.exp(x - steps[days - 1]));
+  };
+  const typeParams: Record<string, [number, number, number]> = {
+    equity: [11, 0.16, 0.05], etf: [12, 0.12, 0.03], 'mutual fund': [13, 0.1, 0.025], 'fixed income': [14, 0.03, 0.008],
+  };
+  const rows: DemoSnapshot[] = [];
+  holdings.forEach((h, i) => {
+    const [seed, drift, vol] = typeParams[h.type] ?? [15, 0, 0];
+    if (!paths.has(h.type)) paths.set(h.type, h.is_cash ? new Array(days).fill(1) : pathFor(h.type, seed, drift, vol));
+    // A little of each holding's own movement on top of its market
+    const own = h.is_cash ? new Array(days).fill(1) : pathFor(h.type, 100 + i, 0, vol * 0.4);
+    const market = paths.get(h.type)!;
+    for (let d = 0; d < days; d++) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - (days - 1 - d));
+      const price = Math.round(h.price * market[d] * own[d] * 100) / 100;
+      rows.push({
+        date: dayKey(date), account_id: h.account_id, security_id: h.security_id, type: h.type,
+        quantity: h.quantity, price, value: Math.round(h.quantity * price * 100) / 100,
+      });
+    }
+  });
+  snapshotCache = { day: todayKey, rows };
+  return rows;
+}
+
+export function demoSecurityHistory(securityId: string, accountIds: string[]): SecurityPoint[] {
+  const data = getDemoData();
+  const byDate = new Map<string, SecurityPoint>();
+  for (const r of demoHoldingSnapshots(new Date(), data.holdings)) {
+    if (r.security_id !== securityId || !accountIds.includes(r.account_id)) continue;
+    const p = byDate.get(r.date) ?? { date: r.date, value: 0, quantity: 0, price: r.price };
+    p.value += r.value;
+    p.quantity += r.quantity;
+    byDate.set(r.date, p);
+  }
+  return [...byDate.values()];
 }

@@ -73,6 +73,21 @@ export function ensureSchema() {
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `,
+      // Each holding's value per day, for the Investments chart, its filters, and holding history
+      sql`
+        CREATE TABLE IF NOT EXISTS holding_snapshots (
+          date TEXT NOT NULL,
+          account_id TEXT NOT NULL,
+          security_id TEXT NOT NULL,
+          ticker TEXT,
+          name TEXT,
+          type TEXT,
+          quantity DOUBLE PRECISION,
+          price DOUBLE PRECISION,
+          value DOUBLE PRECISION,
+          PRIMARY KEY (date, account_id, security_id)
+        )
+      `,
       // Things Plaid can't see: a home, a car, crypto in a wallet, valuables…
       // The value can drift by a yearly rate (a home appreciating, a car depreciating).
       sql`

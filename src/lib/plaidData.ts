@@ -4,8 +4,9 @@ import { ensureSchema, sql } from '@/lib/db';
 import { plaidClient } from '@/lib/plaid';
 import { getSettings, type AppSettings } from '@/lib/settings';
 import { getDemoData, isDemo } from '@/lib/demoData';
-import { dayKey, type CategoryRule, type Connection, type ManualAsset, type NetWorthPoint, type Txn } from '@/lib/finance';
+import { dayKey, type CategoryRule, type Connection, type InvestmentHistory, type ManualAsset, type NetWorthPoint, type Txn } from '@/lib/finance';
 import { readManualAssets, snapshotManualAssets } from '@/lib/manualAssets';
+import { readInvestmentHistory, snapshotHoldings } from '@/lib/investmentStore';
 import {
   isStale, readNetWorthHistory, readRules, readTransactions, snapshotBalances, syncItemTransactions,
 } from '@/lib/transactionStore';
@@ -44,6 +45,7 @@ export type FinancialData = {
   issues: Issue[];
   connections: Connection[];
   manualAssets: ManualAsset[];
+  investmentHistory: InvestmentHistory;
   settings: AppSettings;
   rules: CategoryRule[];
   history: NetWorthPoint[];
@@ -71,7 +73,8 @@ export async function getFinancialData({ bypassCache = false, forceSync = false 
   if (items.length === 0 && manualAssets.length === 0) {
     return {
       linked: false, netWorth: 0, assets: 0, liabilities: 0, accounts: [], transactions: [], holdings: [],
-      issues: [], connections: [], manualAssets: [], settings, rules: [], history: [], fetchedAt: new Date().toISOString(),
+      issues: [], connections: [], manualAssets: [], investmentHistory: { dates: [], series: [], typedSince: null },
+      settings, rules: [], history: [], fetchedAt: new Date().toISOString(),
     };
   }
 
@@ -93,6 +96,8 @@ export async function getFinancialData({ bypassCache = false, forceSync = false 
     ]);
 
     if (accountsRes) await snapshotBalances(item.item_id, accountsRes.data.accounts);
+    // History for the Investments chart (errors here shouldn't block the page)
+    await snapshotHoldings(holdings).catch(e => console.error('Holding snapshot failed:', errorMessage(e)));
 
     const institution = accountsRes?.data.item.institution_name ?? item.institution_name ?? 'Your bank';
     if (accountsRes?.data.item.institution_name && accountsRes.data.item.institution_name !== item.institution_name) {
@@ -136,6 +141,7 @@ export async function getFinancialData({ bypassCache = false, forceSync = false 
   ]);
 
   const accounts = results.flatMap(r => r.accounts);
+  const investmentHistory = await readInvestmentHistory(accounts.filter(a => a.type === 'investment').map(a => a.account_id));
   const holdings = results.flatMap(r => r.holdings).sort((a, b) => b.value - a.value);
   const issues = results.flatMap(r => r.issues);
   const connections = results.map(r => r.connection);
@@ -159,6 +165,7 @@ export async function getFinancialData({ bypassCache = false, forceSync = false 
     issues,
     connections,
     manualAssets,
+    investmentHistory,
     settings,
     rules,
     history,

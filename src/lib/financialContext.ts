@@ -2,6 +2,9 @@ import type { FinancialData } from './plaidData';
 import { ASSET_KIND_META, categoryMeta, displayName, inRange, monthRange, spendingByCategory, sumIncome, sumSpending, SECURITY_TYPE_LABELS } from './finance';
 import { TRANSFER_META, TRANSFER_TYPES, makeTxnRules } from './transfers';
 import { FREQUENCY_LABELS, detectRecurring } from './recurring';
+import { inTodaysDollars } from './forecast';
+import { forecastFor } from './forecastInputs';
+import type { DashboardData } from './finance';
 
 const money = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -43,6 +46,16 @@ export function buildFinancialContext(data: FinancialData) {
   }
 
   const rules = makeTxnRules(data.transactions, data.settings.transferRules);
+
+  const plan = data.settings.forecastPlan;
+  if (plan?.birthYear != null) {
+    const f = forecastFor(data as unknown as DashboardData, rules, plan);
+    const real = (v: number, age: number) => money(inTodaysDollars(v, age - f.currentAge, plan.inflation));
+    lines.push('', `## Net worth forecast (the user's plan; today's dollars; simple steady-growth projection)`);
+    lines.push(`Age ${f.currentAge}, retiring at ${plan.retireAge}, planning to ${plan.planToAge}. Income ${money(plan.income ?? f.baseline.income)}/yr, spending ${money(plan.spending ?? f.baseline.spending)}/yr, investments grow ${plan.growth.investments}%/yr, inflation ${plan.inflation}%.`);
+    if (f.atRetirement) lines.push(`Projected net worth at ${plan.retireAge}: ${real(f.atRetirement.netWorth, f.atRetirement.age)}.`);
+    lines.push(f.runsOutAt ? `Cash and investments run short at age ${f.runsOutAt}.` : `Cash and investments last past age ${plan.planToAge}.`);
+  }
   const counted = TRANSFER_TYPES.filter(t => data.settings.transferRules[t].countAsSpending).map(t => TRANSFER_META[t].label);
   lines.push('', `## Monthly cash flow (transfers excluded from spending, except the user's choice to count: ${counted.join(', ') || 'none'})`);
   for (const offset of [0, -1, -2]) {
