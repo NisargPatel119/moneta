@@ -1,10 +1,10 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { Pencil, Telescope, TriangleAlert } from 'lucide-react';
-import { Area, AreaChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Pencil, Plus, Telescope, Trash2, TriangleAlert } from 'lucide-react';
+import { Area, AreaChart, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { type DashboardData, formatCompact, formatMoney } from '@/lib/finance';
 import type { TxnRules } from '@/lib/transfers';
-import { DEFAULT_PLAN, currentAgeOf, inTodaysDollars, sanitizePlan, type ForecastPlan, type ForecastPoint } from '@/lib/forecast';
+import { DEFAULT_PLAN, EVENT_META, MAX_EVENTS, currentAgeOf, inTodaysDollars, newEvent, sanitizePlan, type EventType, type ForecastPlan, type ForecastPoint, type LifeEvent } from '@/lib/forecast';
 import { forecastFor } from '@/lib/forecastInputs';
 import { Card, Money, SectionTitle, Sheet, cn, usePref, usePrivacy } from './ui';
 
@@ -17,6 +17,8 @@ export function Forecast({ data, rules, onSavePlan }: {
 }) {
   const plan = data.settings?.forecastPlan ?? DEFAULT_PLAN;
   const [editing, setEditing] = useState(false);
+  // An event being edited (id '' = a new one)
+  const [eventEdit, setEventEdit] = useState<LifeEvent | null>(null);
   const [dollars, setDollars] = usePref('ws_forecast_dollars');
   const todays = dollars !== 'future';
   const { hidden } = usePrivacy();
@@ -32,6 +34,7 @@ export function Forecast({ data, rules, onSavePlan }: {
     todays ? inTodaysDollars(value, age - result.currentAge, plan.inflation) : value;
   const chartData = result.points.map(p => ({ ...p, value: adjust(p.netWorth, p.age) }));
   const atRetire = result.atRetirement;
+  const retireAge = result.retireAge;
   const surplus = (plan.income ?? result.baseline.income) - (plan.spending ?? result.baseline.spending);
   const income = plan.income ?? result.baseline.income;
 
@@ -39,7 +42,7 @@ export function Forecast({ data, rules, onSavePlan }: {
     <div className="space-y-5">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Card className="p-4 sm:p-5">
-          <p className="eyebrow text-muted">At {plan.retireAge}</p>
+          <p className="eyebrow text-muted">At {retireAge}</p>
           {atRetire ? (
             <Money value={adjust(atRetire.netWorth, atRetire.age)} whole className="block font-display text-4xl tracking-tight leading-none mt-2" />
           ) : (
@@ -90,16 +93,20 @@ export function Forecast({ data, rules, onSavePlan }: {
               <XAxis dataKey="age" tick={{ fontSize: 11, fill: 'var(--faint)' }} axisLine={false} tickLine={false} minTickGap={24} />
               <YAxis tickFormatter={formatCompact} tick={{ fontSize: 11, fill: 'var(--faint)' }} axisLine={false} tickLine={false} width={52} />
               <Tooltip content={<PointTooltip adjust={adjust} />} />
-              <ReferenceLine x={plan.retireAge} stroke="var(--muted)" strokeDasharray="4 4" label={{ value: 'Retire', position: 'insideTopRight', fill: 'var(--muted)', fontSize: 11 }} />
+              <ReferenceLine x={retireAge} stroke="var(--muted)" strokeDasharray="4 4" label={{ value: 'Retire', position: 'insideTopRight', fill: 'var(--muted)', fontSize: 11 }} />
               {result.runsOutAt && (
                 <ReferenceLine x={result.runsOutAt} stroke="var(--warn)" strokeDasharray="4 4" label={{ value: 'Runs short', position: 'insideTopLeft', fill: 'var(--warn)', fontSize: 11 }} />
               )}
               <Area type="monotone" dataKey="value" stroke={LINE} strokeWidth={2} fill="url(#fc-fill)" activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+              {/* One dot per age that has a life event starting */}
+              {chartData.filter(p => p.events.length > 0).map(p => (
+                <ReferenceDot key={p.age} x={p.age} y={p.value} r={4.5} fill="var(--surface)" stroke="var(--accent)" strokeWidth={2} ifOverflow="visible" />
+              ))}
             </AreaChart>
           </ResponsiveContainer>
         </div>
         <p className="text-xs text-faint mt-2">
-          Age on the bottom. {todays ? "Amounts are in today's dollars, so they're comparable to what money buys now." : 'Amounts include inflation.'}
+          Age on the bottom. {chartData.some(p => p.events.length > 0) && 'Dots mark life events. '}{todays ? "Amounts are in today's dollars, so they're comparable to what money buys now." : 'Amounts include inflation.'}
         </p>
       </Card>
 
@@ -121,7 +128,7 @@ export function Forecast({ data, rules, onSavePlan }: {
         }>Your plan</SectionTitle>
         <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
           <Fact label="Age" value={`${result.currentAge}`} />
-          <Fact label="Retire at" value={`${plan.retireAge}`} />
+          <Fact label="Retire at" value={`${retireAge}`} hint={retireAge !== plan.retireAge ? 'moved by a life event' : undefined} />
           <Fact label="Plan to age" value={`${plan.planToAge}`} />
           <Fact label="Take-home income" value={<><Money value={income} whole />/yr</>} hint={plan.income == null ? 'from your last 12 months' : 'set by you'} />
           <Fact label="Spending" value={<><Money value={plan.spending ?? result.baseline.spending} whole />/yr</>} hint={plan.spending == null ? 'from your last 12 months' : 'set by you'} />
@@ -132,11 +139,35 @@ export function Forecast({ data, rules, onSavePlan }: {
         </dl>
         <p className="text-xs text-faint mt-4 leading-relaxed">
           A simple, directional projection: steady growth each year, income stops at retirement, and spending comes out of cash, then
-          investments. It doesn&apos;t model taxes, Social Security, or market ups and downs yet. It&apos;s not financial advice.
+          investments. Life events are added on top, in today&apos;s dollars. It doesn&apos;t model taxes or market ups and downs yet.
+          It&apos;s not financial advice.
         </p>
       </Card>
 
-      <Milestones points={result.points} adjust={adjust} plan={plan} />
+      <LifeEvents
+        events={plan.events}
+        currentAge={result.currentAge}
+        onAdd={type => setEventEdit({ ...newEvent(type, result.currentAge, retireAge), id: '' })}
+        onEdit={e => setEventEdit(e)}
+        onToggle={id => onSavePlan({ ...plan, events: plan.events.map(e => (e.id === id ? { ...e, enabled: !e.enabled } : e)) })}
+      />
+
+      <Milestones points={result.points} adjust={adjust} plan={plan} retireAge={retireAge} />
+
+      {eventEdit && (
+        <EventEditor
+          event={eventEdit}
+          currentAge={result.currentAge}
+          onClose={() => setEventEdit(null)}
+          onSave={e => {
+            const id = e.id || `e${Date.now().toString(36)}`;
+            const saved = { ...e, id };
+            onSavePlan({ ...plan, events: plan.events.some(x => x.id === id) ? plan.events.map(x => (x.id === id ? saved : x)) : [...plan.events, saved] });
+            setEventEdit(null);
+          }}
+          onDelete={eventEdit.id ? () => { onSavePlan({ ...plan, events: plan.events.filter(x => x.id !== eventEdit.id) }); setEventEdit(null); } : undefined}
+        />
+      )}
 
       {editing && (
         <PlanEditor
@@ -162,9 +193,9 @@ export function ForecastCard({ data, rules, onOpen }: { data: DashboardData; rul
           <Telescope size={20} className="text-accent shrink-0 mt-0.5" />
           {result?.atRetirement ? (
             <p className="text-ink-2 leading-relaxed">
-              At {plan.retireAge} you&apos;d have about{' '}
+              At {result.retireAge} you&apos;d have about{' '}
               <Money value={inTodaysDollars(result.atRetirement.netWorth, result.atRetirement.age - result.currentAge, plan.inflation)} whole className="font-semibold text-ink" />{' '}
-              in today&apos;s dollars, and your money {result.runsOutAt ? <span className="text-warn font-semibold">runs short at {result.runsOutAt}</span> : <>lasts past {plan.planToAge}</>}.
+              in today&apos;s dollars, and your money {result.runsOutAt ? <span className="text-warn font-semibold">runs short at {result.runsOutAt}</span> : <>lasts past {plan.planToAge}</>}{plan.events.some(e => e.enabled) && <> (with {plan.events.filter(e => e.enabled).length} life event{plan.events.filter(e => e.enabled).length === 1 ? '' : 's'})</>}.
             </p>
           ) : (
             <p className="text-ink-2">See where your net worth is heading. Add your age to get started.</p>
@@ -229,6 +260,7 @@ function PlanEditor({ plan, baseline, onClose, onSave }: {
   const clean = (v: string) => v.replace(/[$,%\s]/g, '');
 
   const save = () => onSave(sanitizePlan({
+    events: plan.events,
     birthYear: f.age ? new Date().getFullYear() - Number(clean(f.age)) : plan.birthYear,
     retireAge: clean(f.retireAge),
     planToAge: clean(f.planToAge),
@@ -253,7 +285,7 @@ function PlanEditor({ plan, baseline, onClose, onSave }: {
       footer={
         <div className="flex items-center justify-between gap-3">
           <button
-            onClick={() => onSave({ ...DEFAULT_PLAN, birthYear: plan.birthYear })}
+            onClick={() => onSave({ ...DEFAULT_PLAN, birthYear: plan.birthYear, events: plan.events })}
             className="text-sm font-semibold text-muted hover:text-ink"
           >
             Reset assumptions
@@ -330,14 +362,14 @@ function Fact({ label, value, hint }: { label: string; value: React.ReactNode; h
 }
 
 // Net worth and its parts at a few ages: now, retirement, and the end of the plan
-function Milestones({ points, adjust, plan }: { points: ForecastPoint[]; adjust: (v: number, age: number) => number; plan: ForecastPlan }) {
+function Milestones({ points, adjust, plan, retireAge }: { points: ForecastPoint[]; adjust: (v: number, age: number) => number; plan: ForecastPlan; retireAge: number }) {
   const now = points[0];
   const picks = [
     { label: 'Today', point: now },
-    ...[now.age + 10, plan.retireAge, plan.planToAge]
+    ...[now.age + 10, retireAge, plan.planToAge]
       .filter((age, i, arr) => age > now.age && arr.indexOf(age) === i)
       .sort((a, b) => a - b)
-      .map(age => ({ label: age === plan.retireAge ? `At ${age} (retire)` : `At ${age}`, point: points.find(p => p.age === age) })),
+      .map(age => ({ label: age === retireAge ? `At ${age} (retire)` : `At ${age}`, point: points.find(p => p.age === age) })),
   ].filter((m): m is { label: string; point: ForecastPoint } => !!m.point);
 
   return (
@@ -390,6 +422,182 @@ function PointTooltip({ active, payload, adjust }: {
       {row('Cash', p.cash)}
       {p.property > 0 && row('Property', p.property)}
       {p.debts > 0 && row('Debts', -p.debts)}
+      {p.events.length > 0 && <p className="pt-1 mt-1 border-t border-line text-accent font-semibold">{p.events.join(' · ')}</p>}
     </div>
+  );
+}
+
+const ADDABLE: EventType[] = ['home', 'child', 'college', 'windfall', 'socialSecurity', 'careerBreak', 'income', 'expense', 'retire'];
+
+// One-line description of what an event does, in plain words
+function describe(e: LifeEvent) {
+  const m = (n: number) => formatMoney(n, { whole: true });
+  switch (e.type) {
+    case 'retire': return 'Income stops';
+    case 'home': return `${m(e.amount)} home, ${m(e.downPayment)} down, ${e.years}-year mortgage`;
+    case 'child': return `${m(e.amount)}/yr for ${e.years} years`;
+    case 'college': return `${m(e.amount)}/yr for ${e.years} year${e.years === 1 ? '' : 's'}`;
+    case 'windfall': return `${m(e.amount)} one time`;
+    case 'socialSecurity': return `${m(e.amount)}/month`;
+    case 'careerBreak': return `Income pauses for ${e.years} year${e.years === 1 ? '' : 's'}`;
+    case 'income': case 'expense': return e.years > 1 ? `${m(e.amount)}/yr for ${e.years} years` : `${m(e.amount)} one time`;
+  }
+}
+
+function LifeEvents({ events, currentAge, onAdd, onEdit, onToggle }: {
+  events: LifeEvent[];
+  currentAge: number;
+  onAdd: (type: EventType) => void;
+  onEdit: (e: LifeEvent) => void;
+  onToggle: (id: string) => void;
+}) {
+  const [picking, setPicking] = useState(false);
+  const sorted = [...events].sort((a, b) => a.age - b.age);
+  return (
+    <Card className="p-5 sm:p-6">
+      <SectionTitle action={
+        events.length < MAX_EVENTS ? (
+          <button onClick={() => setPicking(p => !p)} className="text-sm font-semibold text-accent flex items-center gap-1 normal-case tracking-normal">
+            <Plus size={14} /> Add
+          </button>
+        ) : undefined
+      }>Life events</SectionTitle>
+      {picking && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          {ADDABLE.map(type => (
+            <button
+              key={type}
+              onClick={() => { setPicking(false); onAdd(type); }}
+              title={EVENT_META[type].hint}
+              className="px-3 py-1.5 rounded-full bg-sunken text-sm font-semibold text-ink-2 hover:bg-accent-soft hover:text-accent"
+            >
+              {EVENT_META[type].label}
+            </button>
+          ))}
+        </div>
+      )}
+      {sorted.length === 0 ? (
+        <p className="text-sm text-muted leading-relaxed">
+          Add things that will change your money, like buying a home, having a child, or an inheritance, and see how your forecast moves.
+        </p>
+      ) : (
+        <ul className="divide-y divide-line -mx-1">
+          {sorted.map(e => (
+            <li key={e.id} className="flex items-center gap-3 py-2.5 px-1">
+              <button onClick={() => onEdit(e)} className={cn('flex-1 min-w-0 text-left', !e.enabled && 'opacity-50')}>
+                <p className="font-semibold text-ink truncate">{e.label}</p>
+                <p className="text-xs text-muted truncate">
+                  {e.type === 'retire' ? `At ${e.age}` : `Age ${e.age}${e.age <= currentAge ? ' (started)' : ''}`} · {describe(e)}
+                </p>
+              </button>
+              <button
+                role="switch"
+                aria-checked={e.enabled}
+                aria-label={`${e.enabled ? 'Turn off' : 'Turn on'} ${e.label}`}
+                onClick={() => onToggle(e.id)}
+                className={cn('relative w-10 h-6 rounded-full shrink-0 transition-colors', e.enabled ? 'bg-accent' : 'bg-line')}
+              >
+                <span className={cn('absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-surface shadow transition-transform', e.enabled && 'translate-x-4')} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-[11px] text-faint mt-3 leading-relaxed">
+        Amounts are in today&apos;s dollars and grow with inflation. Home purchases don&apos;t include property tax or upkeep, or the rent you&apos;d stop paying.
+      </p>
+    </Card>
+  );
+}
+
+function EventEditor({ event, currentAge, onClose, onSave, onDelete }: {
+  event: LifeEvent;
+  currentAge: number;
+  onClose: () => void;
+  onSave: (e: LifeEvent) => void;
+  onDelete?: () => void;
+}) {
+  const [f, setF] = useState({
+    label: event.label,
+    age: String(event.age),
+    amount: String(event.amount),
+    years: String(event.years),
+    downPayment: String(event.downPayment),
+    mortgageRate: String(event.mortgageRate),
+    recurring: event.years > 1,
+  });
+  const set = (key: 'label' | 'age' | 'amount' | 'years' | 'downPayment' | 'mortgageRate') => (v: string) => setF(prev => ({ ...prev, [key]: v }));
+  const clean = (v: string) => v.replace(/[$,%\s]/g, '');
+  const t = event.type;
+  const custom = t === 'income' || t === 'expense';
+  const ageNum = Number(clean(f.age));
+  const valid = Number.isFinite(ageNum) && ageNum >= 14 && (t === 'retire' || Number(clean(f.amount)) >= 0);
+
+  const save = () => {
+    // Run through the same cleaning as saved plans so bad input can't get in
+    const [clamped] = sanitizePlan({
+      events: [{
+        ...event,
+        label: f.label,
+        age: clean(f.age),
+        amount: clean(f.amount) || 0,
+        years: custom ? (f.recurring ? clean(f.years) : 1) : t === 'child' ? 18 : clean(f.years),
+        downPayment: clean(f.downPayment) || 0,
+        mortgageRate: clean(f.mortgageRate) || 0,
+        id: event.id || 'new',
+      }],
+    }).events;
+    if (clamped) onSave({ ...clamped, id: event.id });
+  };
+
+  return (
+    <Sheet
+      open
+      onClose={onClose}
+      title={event.id ? 'Edit event' : `Add: ${EVENT_META[t].label}`}
+      subtitle={EVENT_META[t].hint}
+      footer={
+        <div className="flex items-center justify-between gap-3">
+          {onDelete ? (
+            <button onClick={onDelete} className="text-sm font-semibold text-muted hover:text-warn flex items-center gap-1"><Trash2 size={14} /> Delete</button>
+          ) : <span />}
+          <button disabled={!valid} onClick={save} className="bg-accent text-on-accent px-5 py-2.5 rounded-xl font-semibold text-sm hover:bg-accent-strong disabled:opacity-40">Save</button>
+        </div>
+      }
+    >
+      <div className="p-5 space-y-4">
+        <label className="block">
+          <span className="text-xs font-semibold text-muted">Name</span>
+          <input
+            value={f.label}
+            onChange={e => set('label')(e.target.value)}
+            maxLength={40}
+            className="mt-1 w-full bg-sunken border border-line rounded-xl px-3 py-2.5 text-[16px] sm:text-sm outline-none focus:ring-2 focus:ring-accent focus:bg-surface"
+          />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <NumberField label={t === 'retire' ? 'Retire at age' : t === 'socialSecurity' ? 'Starts at age' : 'Your age when it starts'} value={f.age} onChange={set('age')}
+            hint={ageNum > currentAge ? `${new Date().getFullYear() + (ageNum - currentAge)}` : ageNum > 0 ? 'Already started' : undefined} />
+          {t === 'home' && <NumberField label="Home price" prefix="$" value={f.amount} onChange={set('amount')} />}
+          {t === 'home' && <NumberField label="Down payment" prefix="$" value={f.downPayment} onChange={set('downPayment')} hint="Paid from cash, then investments" />}
+          {t === 'home' && <NumberField label="Mortgage rate" suffix="%" value={f.mortgageRate} onChange={set('mortgageRate')} />}
+          {t === 'home' && <NumberField label="Mortgage years" value={f.years} onChange={set('years')} />}
+          {(t === 'child' || t === 'college') && <NumberField label="Cost per year" prefix="$" value={f.amount} onChange={set('amount')} />}
+          {t === 'college' && <NumberField label="Years" value={f.years} onChange={set('years')} />}
+          {t === 'windfall' && <NumberField label="Amount" prefix="$" value={f.amount} onChange={set('amount')} />}
+          {t === 'socialSecurity' && <NumberField label="Per month" prefix="$" value={f.amount} onChange={set('amount')} hint="In today's dollars" />}
+          {t === 'careerBreak' && <NumberField label="Years off" value={f.years} onChange={set('years')} />}
+          {custom && <NumberField label={f.recurring ? 'Amount per year' : 'Amount'} prefix="$" value={f.amount} onChange={set('amount')} />}
+          {custom && f.recurring && <NumberField label="For how many years" value={f.years} onChange={set('years')} />}
+        </div>
+        {custom && (
+          <label className="flex items-center gap-2 text-sm text-ink-2">
+            <input type="checkbox" checked={f.recurring} onChange={e => setF(prev => ({ ...prev, recurring: e.target.checked, years: prev.years === '1' || prev.years === '' ? '5' : prev.years }))} className="w-4 h-4 accent-[var(--accent)]" />
+            Repeats every year
+          </label>
+        )}
+        {t === 'child' && <p className="text-[11px] text-faint">Costs run for 18 years from this age.</p>}
+      </div>
+    </Sheet>
   );
 }

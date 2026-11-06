@@ -52,8 +52,10 @@ export function buildFinancialContext(data: FinancialData) {
     const f = forecastFor(data as unknown as DashboardData, rules, plan);
     const real = (v: number, age: number) => money(inTodaysDollars(v, age - f.currentAge, plan.inflation));
     lines.push('', `## Net worth forecast (the user's plan; today's dollars; simple steady-growth projection)`);
-    lines.push(`Age ${f.currentAge}, retiring at ${plan.retireAge}, planning to ${plan.planToAge}. Income ${money(plan.income ?? f.baseline.income)}/yr, spending ${money(plan.spending ?? f.baseline.spending)}/yr, investments grow ${plan.growth.investments}%/yr, inflation ${plan.inflation}%.`);
-    if (f.atRetirement) lines.push(`Projected net worth at ${plan.retireAge}: ${real(f.atRetirement.netWorth, f.atRetirement.age)}.`);
+    lines.push(`Age ${f.currentAge}, retiring at ${f.retireAge}, planning to ${plan.planToAge}. Income ${money(plan.income ?? f.baseline.income)}/yr, spending ${money(plan.spending ?? f.baseline.spending)}/yr, investments grow ${plan.growth.investments}%/yr, inflation ${plan.inflation}%.`);
+    if (f.atRetirement) lines.push(`Projected net worth at ${f.retireAge}: ${real(f.atRetirement.netWorth, f.atRetirement.age)}.`);
+    const events = plan.events.filter(e => e.enabled);
+    if (events.length > 0) lines.push(`Life events in the plan (today's dollars): ${events.map(e => `${e.label} at age ${e.age}${e.amount ? ` (${money(e.amount)}${e.type === 'socialSecurity' ? '/month' : e.years > 1 && e.type !== 'home' ? '/yr' : ''})` : ''}`).join('; ')}.`);
     lines.push(f.runsOutAt ? `Cash and investments run short at age ${f.runsOutAt}.` : `Cash and investments last past age ${plan.planToAge}.`);
   }
   const counted = TRANSFER_TYPES.filter(t => data.settings.transferRules[t].countAsSpending).map(t => TRANSFER_META[t].label);
