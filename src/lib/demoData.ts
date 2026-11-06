@@ -1,6 +1,6 @@
 import type { FinancialData, HoldingRow } from './plaidData';
 import { DEFAULT_TRANSFER_RULES } from './transfers';
-import { DEFAULT_PLAN } from './forecast';
+import { DEFAULT_PLAN, type LifeEvent } from './forecast';
 import {
   dayKey, pointFromBuckets, projectAssetValue, type Connection, type ManualAsset, type NetWorthPoint, type SecurityPoint, type Txn,
 } from './finance';
@@ -129,7 +129,7 @@ export function getDemoData(): FinancialData {
       [],
     ),
     // The demo household is in their mid-thirties
-    settings: { transferRules: DEFAULT_TRANSFER_RULES, dismissedRecurring: [], forecastPlan: { ...DEFAULT_PLAN, birthYear: today.getFullYear() - 35 } },
+    settings: { transferRules: DEFAULT_TRANSFER_RULES, dismissedRecurring: [], forecastPlan: { ...DEFAULT_PLAN, birthYear: today.getFullYear() - 35, events: demoLifeEvents() } },
     rules: [],
     history: buildHistory(today, buckets),
     fetchedAt: today.toISOString(),
@@ -319,4 +319,18 @@ export function demoSecurityHistory(securityId: string, accountIds: string[]): S
     byDate.set(r.date, p);
   }
   return [...byDate.values()];
+}
+
+
+// A few life events so the Forecast tab shows markers and the list; the home is switched off to show the toggle
+function demoLifeEvents(): LifeEvent[] {
+  const e = (id: string, type: LifeEvent['type'], label: string, age: number, rest: Partial<LifeEvent>): LifeEvent =>
+    ({ id, type, label, enabled: true, age, amount: 0, years: 1, downPayment: 0, mortgageRate: 6.5, ...rest });
+  return [
+    e('demo-child', 'child', 'First child', 37, { amount: 14_000, years: 18 }),
+    e('demo-college', 'college', 'College', 55, { amount: 22_000, years: 4 }),
+    e('demo-home', 'home', 'Buy a bigger home', 40, { amount: 520_000, downPayment: 104_000, years: 30, mortgageRate: 6.25, enabled: false }),
+    e('demo-inherit', 'windfall', 'Inheritance', 52, { amount: 60_000 }),
+    e('demo-ss', 'socialSecurity', 'Social Security', 67, { amount: 2_400 }),
+  ];
 }

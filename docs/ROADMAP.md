@@ -41,7 +41,7 @@ One item per night, in this order. The date is the morning it should be live. �
 |---|----|-------|---------|------------|
 | 1 | F1 | ✅ Nov 6 | Net worth forecast: projection, assumptions, Forecast tab | — |
 | 2 | I1 | ✅ Nov 6 | Investments: value-over-time chart and filters | — |
-| 3 | F2 | Nov 7 | Forecast: life events | F1 |
+| 3 | F2 | ✅ Nov 6 | Forecast: life events | F1 |
 | 4 | I2 | Nov 8 | Investments: activity, dividends, contributions vs. growth | I1 |
 | 5 | F3 | Nov 9 | Forecast: simulations, success rate, range bands | F2 |
 | 6 | F4 | Nov 10 | Forecast: saved scenarios and side-by-side compare | F3 |
