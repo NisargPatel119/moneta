@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Building2, CheckCircle2, ChartPie, Eye, EyeOff, House, Inbox, Landmark, LayoutDashboard, LogOut, Plus, Receipt,
-  RefreshCw, Sparkles, Telescope, TriangleAlert, X,
+  Ellipsis, RefreshCw, Sparkles, Telescope, TriangleAlert, X,
 } from 'lucide-react';
 import { logout } from '@/app/login/actions';
 import { type LinkKind, usePlaidConnect } from '@/components/usePlaidConnect';
@@ -18,7 +18,7 @@ import { TransactionEditor, type TxnEdit } from '@/components/TransactionEditor'
 import { Recurring } from '@/components/Recurring';
 import { detectRecurring } from '@/lib/recurring';
 import { DEFAULT_TRANSFER_RULES, makeTxnRules, type TransferRules } from '@/lib/transfers';
-import { Card, Logo, PrivacyProvider, Skeleton, TextSizeControl, Toast, cn, usePrivacy, type ToastMessage } from '@/components/ui';
+import { Card, Logo, PrivacyProvider, Sheet, Skeleton, TextSizeControl, Toast, cn, usePrivacy, type ToastMessage } from '@/components/ui';
 import { DrillSheet, type Drill } from '@/components/DrillSheet';
 import { ReviewInbox } from '@/components/ReviewInbox';
 import { MonthlyRecapSheet } from '@/components/MonthlyRecap';
@@ -40,6 +40,9 @@ const TABS: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'assistant', label: 'Ask AI', icon: Sparkles },
 ];
 
+// Phones show the first four tabs in the bottom bar; the rest live under "More"
+const PHONE_TABS: Tab[] = ['overview', 'spending', 'investments', 'forecast'];
+
 export default function Home() {
   return (
     <PrivacyProvider>
@@ -60,6 +63,7 @@ function Dashboard() {
   const [selectedTxn, setSelectedTxn] = useState<Txn | null>(null);
   const [drill, setDrill] = useState<Drill | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [recapMonth, setRecapMonth] = useState<string | null>(null);
   const [assetEditing, setAssetEditing] = useState<ManualAsset | 'new' | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -570,23 +574,74 @@ function Dashboard() {
 
       <Toast toast={toast} onDone={clearToast} />
 
-      {/* Mobile bottom tab bar */}
-      {data?.linked && (
-        <nav className="md:hidden fixed bottom-0 inset-x-0 z-20 bg-surface/95 backdrop-blur border-t border-line pb-[env(safe-area-inset-bottom)]">
-          <div className="grid grid-cols-6">
-            {TABS.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => goTo(id)}
-                className={cn('flex flex-col items-center gap-1 py-2 text-[10px] sm:text-[11px] font-semibold transition-colors', tab === id ? 'text-accent' : 'text-muted')}
-              >
-                <Icon size={20} />
-                {label}
-              </button>
-            ))}
-          </div>
-        </nav>
-      )}
+      {/* Mobile bottom tab bar: four tabs plus More */}
+      {data?.linked && (() => {
+        const brokenConnections = (data.connections ?? []).filter(c => c.status !== 'ok').length;
+        const moreActive = !PHONE_TABS.includes(tab);
+        const moreBadge = reviewQueue.length > 0 || brokenConnections > 0;
+        const moreItems: { label: string; hint: string; icon: typeof Inbox; onClick: () => void; badge?: string; warn?: boolean }[] = [
+          {
+            label: 'Accounts', icon: Building2, onClick: () => goTo('accounts'),
+            hint: brokenConnections > 0 ? `${brokenConnections} connection${brokenConnections === 1 ? ' needs' : 's need'} attention` : 'Balances, assets and connections',
+            warn: brokenConnections > 0,
+          },
+          { label: 'Ask AI', icon: Sparkles, onClick: () => goTo('assistant'), hint: 'Questions about your money' },
+          {
+            label: 'Review inbox', icon: Inbox, onClick: () => setReviewOpen(true),
+            hint: reviewQueue.length > 0 ? 'New transactions to check' : 'All caught up',
+            badge: reviewQueue.length > 0 ? String(reviewQueue.length) : undefined,
+          },
+        ];
+        return (
+          <>
+            <nav className="md:hidden fixed bottom-0 inset-x-0 z-20 bg-surface/95 backdrop-blur border-t border-line pb-[env(safe-area-inset-bottom)]">
+              <div className="grid grid-cols-5">
+                {TABS.filter(t => PHONE_TABS.includes(t.id)).map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    onClick={() => goTo(id)}
+                    aria-current={tab === id ? 'page' : undefined}
+                    className={cn('flex flex-col items-center gap-1 py-2 text-[11px] font-semibold transition-colors', tab === id ? 'text-accent' : 'text-muted')}
+                  >
+                    <Icon size={21} />
+                    {label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setMoreOpen(true)}
+                  aria-label={moreBadge ? 'More, something needs attention' : 'More'}
+                  className={cn('relative flex flex-col items-center gap-1 py-2 text-[11px] font-semibold transition-colors', moreActive ? 'text-accent' : 'text-muted')}
+                >
+                  <span className="relative">
+                    <Ellipsis size={21} />
+                    {moreBadge && <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-accent ring-2 ring-surface" />}
+                  </span>
+                  {moreActive ? TABS.find(t => t.id === tab)?.label : 'More'}
+                </button>
+              </div>
+            </nav>
+            <Sheet open={moreOpen} onClose={() => setMoreOpen(false)} title="More">
+              <ul className="p-2">
+                {moreItems.map(({ label, hint, icon: Icon, onClick, badge, warn }) => (
+                  <li key={label}>
+                    <button
+                      onClick={() => { setMoreOpen(false); onClick(); }}
+                      className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-sunken text-left"
+                    >
+                      <span className="w-10 h-10 rounded-xl bg-accent-soft text-accent flex items-center justify-center shrink-0"><Icon size={19} /></span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block font-semibold text-ink">{label}</span>
+                        <span className={cn('block text-xs truncate', warn ? 'text-warn' : 'text-muted')}>{hint}</span>
+                      </span>
+                      {badge && <span className="bg-accent text-on-accent text-xs font-bold rounded-full px-2 py-0.5">{badge}</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </Sheet>
+          </>
+        );
+      })()}
     </div>
   );
 }

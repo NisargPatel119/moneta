@@ -1,8 +1,8 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { ChevronRight, LineChart, Plus } from 'lucide-react';
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, ChevronRight, LineChart, Plus } from 'lucide-react';
 import { type DashboardData, type HoldingRow, SECURITY_TYPE_LABELS } from '@/lib/finance';
-import { Card, Money, SectionTitle, cn, usePrivacy, tint } from './ui';
+import { Card, Money, SectionTitle, cn, usePref, usePrivacy, tint } from './ui';
 import {
   FilterBar, FilterSheet, HoldingSheet, ValueChart, activeFilterCount, filterAccounts, filteredHistory, typeKey,
   useInvestmentFilters, type HoldingDetail,
@@ -22,10 +22,53 @@ const TYPE_COLORS: Record<string, string> = {
 const OTHER_COLOR = 'var(--faint)';
 
 type Combined = HoldingRow & { gain: number | null; accounts: number };
-type Sort = 'value' | 'gain' | 'name';
+type SortKey = 'value' | 'gain' | 'gainPct' | 'name' | 'type' | 'price';
+type SortDir = 'asc' | 'desc';
+
+const SORTS: { key: SortKey; label: string; dir: SortDir }[] = [
+  { key: 'value', label: 'Value', dir: 'desc' },
+  { key: 'gain', label: 'Gain ($)', dir: 'desc' },
+  { key: 'gainPct', label: 'Gain (%)', dir: 'desc' },
+  { key: 'name', label: 'Name', dir: 'asc' },
+  { key: 'type', label: 'Asset type', dir: 'asc' },
+  { key: 'price', label: 'Price', dir: 'desc' },
+];
+
+const gainPctOf = (h: Combined) => (h.gain != null && h.cost_basis ? h.gain / h.cost_basis : null);
+
+// Sorts holdings; ones without a number to sort by (e.g. no cost basis) always go last
+function sortHoldings(list: Combined[], key: SortKey, dir: SortDir) {
+  const label = (h: Combined) => h.ticker ?? h.name;
+  const numeric: Partial<Record<SortKey, (h: Combined) => number | null>> = {
+    value: h => h.value,
+    gain: h => h.gain,
+    gainPct: gainPctOf,
+    price: h => (h.is_cash ? null : h.price),
+  };
+  const sign = dir === 'asc' ? 1 : -1;
+  return [...list].sort((a, b) => {
+    if (key === 'name') return sign * label(a).localeCompare(label(b));
+    if (key === 'type') {
+      const byType = TYPE_ORDER.indexOf(typeKey(a.type, TYPE_ORDER)) - TYPE_ORDER.indexOf(typeKey(b.type, TYPE_ORDER));
+      // Within a type, biggest first
+      return byType !== 0 ? sign * byType : b.value - a.value;
+    }
+    const x = numeric[key]!(a);
+    const y = numeric[key]!(b);
+    if (x == null || y == null) return x == null && y == null ? b.value - a.value : x == null ? 1 : -1;
+    return sign * (x - y);
+  });
+}
 
 export function Investments({ data, onLinkBrokerage }: { data: DashboardData; onLinkBrokerage: () => void }) {
-  const [sort, setSort] = useState<Sort>('value');
+  // Remembered per device, as "key:dir"
+  const [savedSort, setSavedSort] = usePref('ws_holdings_sort');
+  const [sortKey, sortDir] = (() => {
+    const [k, d] = (savedSort ?? '').split(':');
+    const known = SORTS.find(s => s.key === k);
+    return known ? [known.key, d === 'asc' || d === 'desc' ? d : known.dir] as const : ['value', 'desc'] as const;
+  })();
+  const setSort = (key: SortKey, dir?: SortDir) => setSavedSort(`${key}:${dir ?? SORTS.find(s => s.key === key)!.dir}`);
   const [filters, setFilters] = useInvestmentFilters();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selected, setSelected] = useState<HoldingDetail | null>(null);
@@ -70,11 +113,7 @@ export function Investments({ data, onLinkBrokerage }: { data: DashboardData; on
     return combined;
   }, [filteredRows]);
 
-  const sorted = useMemo(() => [...holdings].sort((a, b) =>
-    sort === 'name' ? (a.ticker ?? a.name).localeCompare(b.ticker ?? b.name)
-      : sort === 'gain' ? (b.gain ?? -Infinity) - (a.gain ?? -Infinity)
-        : b.value - a.value
-  ), [holdings, sort]);
+  const sorted = useMemo(() => sortHoldings(holdings, sortKey, sortDir), [holdings, sortKey, sortDir]);
 
   const total = holdings.reduce((s, h) => s + h.value, 0);
   const withBasis = holdings.filter(h => h.gain != null);
@@ -204,21 +243,31 @@ export function Investments({ data, onLinkBrokerage }: { data: DashboardData; on
       <Card className="overflow-hidden">
         <div className="px-4 sm:px-5 pt-4 sm:pt-5 pb-3 flex items-center justify-between gap-3 border-b border-line">
           <h3 className="text-muted eyebrow">{holdings.length} holdings</h3>
-          <div className="inline-flex bg-sunken rounded-lg p-0.5 text-xs font-semibold">
-            {(['value', 'gain', 'name'] as const).map(s => (
-              <button
-                key={s}
-                onClick={() => setSort(s)}
-                className={cn('px-2.5 py-1 rounded-md capitalize', sort === s ? 'bg-surface text-ink' : 'text-muted')}
+          <div className="flex items-center gap-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-muted">
+              <span className="hidden sm:inline">Sort by</span>
+              <select
+                value={sortKey}
+                onChange={e => setSort(e.target.value as SortKey)}
+                aria-label="Sort holdings by"
+                className="bg-sunken border border-line rounded-lg pl-2 pr-1 py-1.5 text-[16px] sm:text-xs font-semibold text-ink outline-none focus:ring-2 focus:ring-accent"
               >
-                {s}
-              </button>
-            ))}
+                {SORTS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+            </label>
+            <button
+              onClick={() => setSort(sortKey, sortDir === 'asc' ? 'desc' : 'asc')}
+              title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
+              aria-label={`Sort ${sortDir === 'asc' ? 'ascending' : 'descending'}; tap to reverse`}
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-sunken border border-line text-ink-2 hover:text-ink"
+            >
+              {sortDir === 'asc' ? <ArrowUpNarrowWide size={15} /> : <ArrowDownWideNarrow size={15} />}
+            </button>
           </div>
         </div>
         <ul className="divide-y divide-line">
           {sorted.map(h => {
-            const pct = h.gain != null && h.cost_basis ? h.gain / h.cost_basis : null;
+            const pct = gainPctOf(h);
             return (
               <li key={h.security_id}>
                 <button onClick={() => openHolding(h)} className="w-full text-left flex items-center gap-3 px-4 sm:px-5 py-3 hover:bg-sunken transition-colors">
