@@ -81,6 +81,26 @@ export type InvestmentHistory = {
 
 export type SecurityPoint = { date: string; value: number; quantity: number; price: number };
 
+export type InvestmentTxnKind = 'buy' | 'sell' | 'dividend' | 'contribution' | 'withdrawal' | 'fee' | 'other';
+
+// One brokerage event (a trade, dividend, deposit or fee). `amount` follows Plaid's sign:
+// positive = cash left the account (a buy, a fee), negative = cash came in (a sale, a dividend, a deposit).
+export type InvestmentTxn = {
+  id: string;
+  account_id: string;
+  /** null for cash events like deposits */
+  security_id: string | null;
+  ticker: string | null;
+  name: string;
+  /** The security's type (equity, etf…), null for cash events */
+  security_type: string | null;
+  date: string;
+  kind: InvestmentTxnKind;
+  amount: number;
+  quantity: number | null;
+  price: number | null;
+};
+
 export type DashboardIssue = { item_id: string; code: string; message: string; institution?: string };
 
 // One linked login at one institution (a Plaid "Item")
@@ -141,6 +161,8 @@ export type DashboardData = {
   connections: Connection[];
   manualAssets: ManualAsset[];
   investmentHistory: InvestmentHistory;
+  /** Trades, dividends, deposits and fees from the last 24 months */
+  investmentTransactions: InvestmentTxn[];
   settings: { transferRules: TransferRules; dismissedRecurring: string[]; forecastPlan: ForecastPlan };
   rules: CategoryRule[];
   history: NetWorthPoint[];

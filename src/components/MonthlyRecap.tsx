@@ -51,7 +51,7 @@ export function MonthlyRecapSheet({ month, setMonth, data, rules, recurring, onC
 }) {
   const months = useMemo(() => monthsWithData(data.transactions), [data.transactions]);
   const recap = useMemo(
-    () => (month ? buildRecap(month, data.transactions, rules, recurring, data.history ?? []) : null),
+    () => (month ? buildRecap(month, data.transactions, rules, recurring, data.history ?? [], data.investmentTransactions ?? []) : null),
     [month, data, rules, recurring]
   );
   if (!month || !recap) return null;

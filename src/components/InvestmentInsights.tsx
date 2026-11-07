@@ -190,9 +190,27 @@ const RANGES = [
   { id: '1Y', days: 366 },
   { id: 'All', days: Infinity },
 ] as const;
-type RangeId = (typeof RANGES)[number]['id'];
+export type RangeId = (typeof RANGES)[number]['id'];
 
 const LINE = 'var(--accent)';
+
+// The selected range is remembered per device and shared by the chart and the contributions card
+export function useInvestmentRange(): [RangeId, (id: RangeId) => void] {
+  const [range, setRange] = usePref('ws_investment_range');
+  return [RANGES.find(r => r.id === range)?.id ?? '3M', setRange];
+}
+
+// The points inside a range, ending on today's live value
+export function seriesForRange(points: { date: string; value: number }[], rangeId: RangeId, current: number) {
+  const days = RANGES.find(r => r.id === rangeId)!.days;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - (Number.isFinite(days) ? days : 0));
+  const inRange = Number.isFinite(days) ? points.filter(p => p.date >= dayKey(cutoff)) : points;
+  const today = dayKey(new Date());
+  return [...inRange.filter(p => p.date < today), { date: today, value: current }];
+}
+
+export const RANGE_PHRASE: Record<RangeId, string> = { '1M': 'past month', '3M': 'past 3 months', '1Y': 'past year', All: 'all time' };
 
 // Sums the history series that match the filters. With an asset-type filter, days from before
 // holdings were recorded (account totals only) can't be split, so the chart starts at typedSince.
@@ -210,17 +228,9 @@ export function ValueChart({ points, current, title = 'Value over time', emptyTe
   title?: string;
   emptyText?: string;
 }) {
-  const [range, setRange] = usePref('ws_investment_range');
-  const rangeId: RangeId = (RANGES.find(r => r.id === range)?.id ?? '3M');
+  const [rangeId, setRange] = useInvestmentRange();
   const { hidden } = usePrivacy();
-
-  const days = RANGES.find(r => r.id === rangeId)!.days;
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - (Number.isFinite(days) ? days : 0));
-  const inRange = Number.isFinite(days) ? points.filter(p => p.date >= dayKey(cutoff)) : points;
-  // End on today's live value
-  const today = dayKey(new Date());
-  const series = [...inRange.filter(p => p.date < today), { date: today, value: current }];
+  const series = seriesForRange(points, rangeId, current);
 
   if (points.length < 1 || series.length < 2) {
     return (
@@ -245,7 +255,7 @@ export function ValueChart({ points, current, title = 'Value over time', emptyTe
           <p className="eyebrow text-muted">{title}</p>
           <p className={cn('text-sm font-semibold mt-1', change >= 0 ? 'text-positive' : 'text-negative')}>
             <Money value={change} signed whole /> ({change >= 0 ? '+' : '−'}{Math.abs(pct * 100).toFixed(1)}%)
-            <span className="text-faint font-medium"> {rangeId === 'All' ? 'all time' : `past ${rangeId === '1M' ? 'month' : rangeId === '3M' ? '3 months' : 'year'}`}</span>
+            <span className="text-faint font-medium"> {RANGE_PHRASE[rangeId]}</span>
           </p>
         </div>
         <div className="inline-flex bg-sunken rounded-lg p-0.5 text-xs font-semibold">
