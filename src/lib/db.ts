@@ -88,6 +88,24 @@ export function ensureSchema() {
           PRIMARY KEY (date, account_id, security_id)
         )
       `,
+      // Trades, dividends, deposits and fees from Plaid, for the Investments activity list and dividend totals
+      sql`
+        CREATE TABLE IF NOT EXISTS investment_transactions (
+          investment_transaction_id TEXT PRIMARY KEY,
+          item_id TEXT NOT NULL,
+          account_id TEXT NOT NULL,
+          security_id TEXT,
+          ticker TEXT,
+          name TEXT NOT NULL,
+          security_type TEXT,
+          date TEXT NOT NULL,
+          type TEXT,
+          subtype TEXT,
+          amount DOUBLE PRECISION NOT NULL,
+          quantity DOUBLE PRECISION,
+          price DOUBLE PRECISION
+        )
+      `,
       // Things Plaid can't see: a home, a car, crypto in a wallet, valuables…
       // The value can drift by a yearly rate (a home appreciating, a car depreciating).
       sql`
@@ -108,6 +126,9 @@ export function ensureSchema() {
       sql`ALTER TABLE plaid_items ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ`,
       // Remembered so a bank that stops responding can still be named ("Reconnect Chase")
       sql`ALTER TABLE plaid_items ADD COLUMN IF NOT EXISTS institution_name TEXT`,
+      // When investment activity was last pulled for this bank (separate from the transaction cursor)
+      sql`ALTER TABLE plaid_items ADD COLUMN IF NOT EXISTS investments_synced_at TIMESTAMPTZ`,
+      sql`CREATE INDEX IF NOT EXISTS investment_transactions_date_idx ON investment_transactions (date)`,
       sql`CREATE INDEX IF NOT EXISTS transactions_date_idx ON transactions (date)`,
       // Review inbox. Rows that existed before this column count as reviewed (the default
       // applies to them when the column is added); the next statement makes new rows unreviewed.

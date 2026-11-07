@@ -4,9 +4,11 @@ import { ensureSchema, sql } from '@/lib/db';
 import { plaidClient } from '@/lib/plaid';
 import { getSettings, type AppSettings } from '@/lib/settings';
 import { getDemoData, isDemo } from '@/lib/demoData';
-import { dayKey, type CategoryRule, type Connection, type InvestmentHistory, type ManualAsset, type NetWorthPoint, type Txn } from '@/lib/finance';
+import { dayKey, type CategoryRule, type Connection, type InvestmentHistory, type InvestmentTxn, type ManualAsset, type NetWorthPoint, type Txn } from '@/lib/finance';
 import { readManualAssets, snapshotManualAssets } from '@/lib/manualAssets';
-import { readInvestmentHistory, snapshotHoldings } from '@/lib/investmentStore';
+import {
+  activityIsStale, markActivitySynced, readInvestmentHistory, readInvestmentTransactions, snapshotHoldings, syncInvestmentTransactions,
+} from '@/lib/investmentStore';
 import {
   isStale, readNetWorthHistory, readRules, readTransactions, snapshotBalances, syncItemTransactions,
 } from '@/lib/transactionStore';
@@ -46,6 +48,7 @@ export type FinancialData = {
   connections: Connection[];
   manualAssets: ManualAsset[];
   investmentHistory: InvestmentHistory;
+  investmentTransactions: InvestmentTxn[];
   settings: AppSettings;
   rules: CategoryRule[];
   history: NetWorthPoint[];
@@ -66,14 +69,14 @@ export async function getFinancialData({ bypassCache = false, forceSync = false 
 
   await ensureSchema();
   const [items, settings, manualAssets] = await Promise.all([
-    sql`SELECT access_token, item_id, sync_cursor, last_synced_at, institution_name FROM plaid_items`,
+    sql`SELECT access_token, item_id, sync_cursor, last_synced_at, institution_name, investments_synced_at FROM plaid_items`,
     getSettings(),
     readManualAssets(),
   ]);
   if (items.length === 0 && manualAssets.length === 0) {
     return {
       linked: false, netWorth: 0, assets: 0, liabilities: 0, accounts: [], transactions: [], holdings: [],
-      issues: [], connections: [], manualAssets: [], investmentHistory: { dates: [], series: [], typedSince: null },
+      issues: [], connections: [], manualAssets: [], investmentHistory: { dates: [], series: [], typedSince: null }, investmentTransactions: [],
       settings, rules: [], history: [], fetchedAt: new Date().toISOString(),
     };
   }
@@ -83,7 +86,7 @@ export async function getFinancialData({ bypassCache = false, forceSync = false 
   // only when they're stale, so most loads read straight from Postgres.
   const results = await Promise.all(items.map(async (row) => {
     const item = row as {
-      access_token: string; item_id: string; sync_cursor: string | null; last_synced_at: string | null; institution_name: string | null;
+      access_token: string; item_id: string; sync_cursor: string | null; last_synced_at: string | null; institution_name: string | null; investments_synced_at: string | null;
     };
     const issues: Issue[] = [];
 
@@ -93,6 +96,16 @@ export async function getFinancialData({ bypassCache = false, forceSync = false 
       plaidClient.accountsGet({ access_token: item.access_token }).catch(e => { issues.push(toIssue(item.item_id, e)); return null; }),
       fetchHoldings(item.access_token).catch(e => { noteIssue(issues, item.item_id, e); return []; }),
       (forceSync || isStale(item)) && syncItemTransactions(item).then(() => true, e => { noteIssue(issues, item.item_id, e); return false; }),
+      // Investment activity follows the same staleness schedule. A bank without the product is
+      // marked as checked so we don't ask again every load, and says nothing.
+      (forceSync || activityIsStale(item)) && syncInvestmentTransactions(item).catch(async e => {
+        const code = plaidErrorBody(e)?.error_code;
+        if (code && UNSUPPORTED.has(code)) {
+          await markActivitySynced(item.item_id).catch(() => {});
+          return;
+        }
+        console.error('Investment activity sync failed:', errorMessage(e));
+      }),
     ]);
 
     if (accountsRes) await snapshotBalances(item.item_id, accountsRes.data.accounts);
@@ -141,7 +154,10 @@ export async function getFinancialData({ bypassCache = false, forceSync = false 
   ]);
 
   const accounts = results.flatMap(r => r.accounts);
-  const investmentHistory = await readInvestmentHistory(accounts.filter(a => a.type === 'investment').map(a => a.account_id));
+  const [investmentHistory, investmentTransactions] = await Promise.all([
+    readInvestmentHistory(accounts.filter(a => a.type === 'investment').map(a => a.account_id)),
+    readInvestmentTransactions().catch(e => { console.error('Reading investment activity failed:', errorMessage(e)); return [] as InvestmentTxn[]; }),
+  ]);
   const holdings = results.flatMap(r => r.holdings).sort((a, b) => b.value - a.value);
   const issues = results.flatMap(r => r.issues);
   const connections = results.map(r => r.connection);
@@ -166,6 +182,7 @@ export async function getFinancialData({ bypassCache = false, forceSync = false 
     connections,
     manualAssets,
     investmentHistory,
+    investmentTransactions,
     settings,
     rules,
     history,

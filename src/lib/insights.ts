@@ -1,7 +1,8 @@
 import {
   NET_WORTH_BUCKETS, categoryMeta, dayKey, inRange, isIncome, merchantKey, parseDay, spendingByCategory, sumIncome, sumSpending,
-  type NetWorthBucket, type NetWorthPoint, type Txn,
+  type InvestmentTxn, type NetWorthBucket, type NetWorthPoint, type Txn,
 } from './finance';
+import { netContributions } from './investmentActivity';
 import type { TxnRules } from './transfers';
 import type { RecurringItem } from './recurring';
 
@@ -26,8 +27,10 @@ const isDebt = (b: NetWorthBucket) => b === 'credit' || b === 'loans';
 
 // Compares the last recorded day on or before `fromDay` with the last day on or before `toDay`.
 // If history starts after `fromDay`, it compares from the first recorded day instead.
+// Contributions come from the brokerage's own deposit records when we have them (they're exact);
+// otherwise they're estimated from transfers out of linked cash accounts.
 export function netWorthChange(
-  history: NetWorthPoint[], fromDay: string, toDay: string, txns: Txn[], rules: TxnRules,
+  history: NetWorthPoint[], fromDay: string, toDay: string, txns: Txn[], rules: TxnRules, investmentTxns: InvestmentTxn[] = [],
 ): NetWorthChange | null {
   const upTo = history.filter(p => p.date <= toDay);
   const end = upTo[upTo.length - 1];
@@ -41,7 +44,9 @@ export function netWorthChange(
   }).filter(b => Math.abs(b.effect) >= 1);
 
   const range = { start: start.date, end: end.date };
-  const contributions = txns
+  const contributions = investmentTxns.length > 0
+    ? Math.max(0, netContributions(investmentTxns, range.start, range.end))
+    : txns
     .filter(t => t.date > range.start && t.date <= range.end && t.amount > 0 && rules.kind(t) === 'investments')
     .reduce((s, t) => s + t.amount, 0);
 
@@ -96,7 +101,7 @@ export function monthsWithData(txns: Txn[]) {
 }
 
 export function buildRecap(
-  month: string, txns: Txn[], rules: TxnRules, recurring: RecurringItem[], history: NetWorthPoint[],
+  month: string, txns: Txn[], rules: TxnRules, recurring: RecurringItem[], history: NetWorthPoint[], investmentTxns: InvestmentTxn[] = [],
 ): MonthlyRecap {
   const range = monthBounds(month);
   const inMonth = txns.filter(t => inRange(t, range));
@@ -156,7 +161,7 @@ export function buildRecap(
     biggest,
     newRecurring,
     priceChanges,
-    netWorth: netWorthChange(history, prevRange.end, range.end, txns, rules),
+    netWorth: netWorthChange(history, prevRange.end, range.end, txns, rules, investmentTxns),
   };
 }
 

@@ -7,6 +7,8 @@ import {
   FilterBar, FilterSheet, HoldingSheet, ValueChart, activeFilterCount, filterAccounts, filteredHistory, typeKey,
   useInvestmentFilters, type HoldingDetail,
 } from './InvestmentInsights';
+import { ActivityCard, ContributionsCard, DividendsCard } from './InvestmentActivity';
+import { filterInvestmentTxns } from '@/lib/investmentActivity';
 
 // Validated categorical palette (dataviz skill), assigned in fixed order by type, so a
 // filter that removes a type never repaints the others.
@@ -91,6 +93,17 @@ export function Investments({ data, onLinkBrokerage }: { data: DashboardData; on
   const historyPoints = useMemo(
     () => (data.investmentHistory ? filteredHistory(data.investmentHistory, shownAccounts, typeMatches) : []),
     [data.investmentHistory, shownAccounts, typeMatches]
+  );
+
+  // Activity follows the same filters as everything else
+  const filteredTxns = useMemo(
+    () => filterInvestmentTxns(data.investmentTransactions ?? [], shownAccounts, typeMatches),
+    [data.investmentTransactions, shownAccounts, typeMatches]
+  );
+  // Deposits and fees belong to an account, not an asset type, so contributions use the account filters only
+  const accountTxns = useMemo(
+    () => filterInvestmentTxns(data.investmentTransactions ?? [], shownAccounts, null),
+    [data.investmentTransactions, shownAccounts]
   );
 
   const holdings = useMemo(() => {
@@ -183,6 +196,10 @@ export function Investments({ data, onLinkBrokerage }: { data: DashboardData; on
         )}
       </Card>
 
+      {(data.investmentTransactions ?? []).length > 0 && (
+        <ContributionsCard points={historyPoints} current={total} txns={accountTxns} typeFiltered={typeMatches != null} />
+      )}
+
       {/* Totals */}
       <div className="grid grid-cols-2 gap-3">
         <Card className="p-4 sm:p-5">
@@ -238,6 +255,8 @@ export function Investments({ data, onLinkBrokerage }: { data: DashboardData; on
           ))}
         </ul>
       </Card>
+
+      <DividendsCard txns={filteredTxns} />
 
       {/* Holdings */}
       <Card className="overflow-hidden">
@@ -305,6 +324,7 @@ export function Investments({ data, onLinkBrokerage }: { data: DashboardData; on
           Prices come from your brokerage and may be delayed. Gains are based on the cost basis your brokerage reports.
         </p>
       </Card>
+      <ActivityCard txns={filteredTxns} accountName={accountName} />
       </>)}
 
       <FilterSheet

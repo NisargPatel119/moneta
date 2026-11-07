@@ -1,5 +1,7 @@
 import { sql } from '@/lib/db';
-import { dayKey, parseDay, type InvestmentHistory, type SecurityPoint } from '@/lib/finance';
+import { dayKey, parseDay, type InvestmentHistory, type InvestmentTxn, type SecurityPoint } from '@/lib/finance';
+import { classifyInvestmentTxn } from '@/lib/investmentActivity';
+import { plaidClient } from '@/lib/plaid';
 import type { HoldingRow } from '@/lib/plaidData';
 
 // Records today's value of every holding (re-running the same day just updates it)
@@ -103,4 +105,114 @@ export async function readSecurityHistory(securityId: string, accountIds: string
     GROUP BY date ORDER BY date
   `) as { date: string; value: number; quantity: number; price: number }[];
   return rows.map(r => ({ date: r.date, value: Number(r.value), quantity: Number(r.quantity), price: Number(r.price) }));
+}
+
+// ---------- Investment activity ----------
+
+// Plaid returns up to 500 per page; rows are also saved in chunks of this size
+const ACTIVITY_MONTHS = 24;
+const ACTIVITY_PAGE = 500;
+const ACTIVITY_STALE_MS = 10 * 60_000;
+
+export function activityIsStale(item: { investments_synced_at: string | null }) {
+  return !item.investments_synced_at || Date.now() - new Date(item.investments_synced_at).getTime() > ACTIVITY_STALE_MS;
+}
+
+// Pulls 24 months of investment transactions for one bank and saves them (re-runs just update rows).
+// Throws Plaid's errors so the caller can treat "this bank has no investments" quietly.
+export async function syncInvestmentTransactions(item: { access_token: string; item_id: string }) {
+  const end = new Date();
+  const start = new Date();
+  start.setMonth(start.getMonth() - ACTIVITY_MONTHS);
+  const rows: InvestmentTxn[] = [];
+  const meta = new Map<string, { type: string | null; subtype: string | null }>();
+
+  for (let offset = 0, total = Infinity; offset < total; ) {
+    const res = await plaidClient.investmentsTransactionsGet({
+      access_token: item.access_token,
+      start_date: dayKey(start),
+      end_date: dayKey(end),
+      options: { count: ACTIVITY_PAGE, offset },
+    });
+    const securities = new Map(res.data.securities.map(s => [s.security_id, s]));
+    for (const t of res.data.investment_transactions) {
+      const s = t.security_id ? securities.get(t.security_id) : undefined;
+      const kind = classifyInvestmentTxn(t.type, t.subtype, t.amount);
+      meta.set(t.investment_transaction_id, { type: t.type, subtype: t.subtype });
+      rows.push({
+        id: t.investment_transaction_id,
+        account_id: t.account_id,
+        security_id: t.security_id ?? null,
+        ticker: s?.ticker_symbol ?? null,
+        name: s?.name ?? t.name,
+        security_type: s ? (s.is_cash_equivalent ? 'cash' : s.type ?? 'other') : null,
+        date: t.date,
+        kind,
+        amount: t.amount,
+        quantity: t.quantity ?? null,
+        price: t.price ?? null,
+      });
+    }
+    total = res.data.total_investment_transactions;
+    offset += res.data.investment_transactions.length;
+    if (res.data.investment_transactions.length === 0) break;
+  }
+
+  for (let i = 0; i < rows.length; i += ACTIVITY_PAGE) {
+    const chunk = rows.slice(i, i + ACTIVITY_PAGE);
+    await sql`
+      INSERT INTO investment_transactions
+        (investment_transaction_id, item_id, account_id, security_id, ticker, name, security_type, date, type, subtype, amount, quantity, price)
+      SELECT * FROM UNNEST(
+        ${chunk.map(r => r.id)}::text[],
+        ${chunk.map(() => item.item_id)}::text[],
+        ${chunk.map(r => r.account_id)}::text[],
+        ${chunk.map(r => r.security_id)}::text[],
+        ${chunk.map(r => r.ticker)}::text[],
+        ${chunk.map(r => r.name)}::text[],
+        ${chunk.map(r => r.security_type)}::text[],
+        ${chunk.map(r => r.date)}::text[],
+        ${chunk.map(r => meta.get(r.id)!.type)}::text[],
+        ${chunk.map(r => meta.get(r.id)!.subtype)}::text[],
+        ${chunk.map(r => r.amount)}::float8[],
+        ${chunk.map(r => r.quantity)}::float8[],
+        ${chunk.map(r => r.price)}::float8[]
+      )
+      ON CONFLICT (investment_transaction_id) DO UPDATE SET
+        account_id = EXCLUDED.account_id, security_id = EXCLUDED.security_id, ticker = EXCLUDED.ticker, name = EXCLUDED.name,
+        security_type = EXCLUDED.security_type, date = EXCLUDED.date, type = EXCLUDED.type, subtype = EXCLUDED.subtype,
+        amount = EXCLUDED.amount, quantity = EXCLUDED.quantity, price = EXCLUDED.price
+    `;
+  }
+  await markActivitySynced(item.item_id);
+}
+
+export async function markActivitySynced(itemId: string) {
+  await sql`UPDATE plaid_items SET investments_synced_at = NOW() WHERE item_id = ${itemId}`;
+}
+
+export async function readInvestmentTransactions(): Promise<InvestmentTxn[]> {
+  const since = new Date();
+  since.setMonth(since.getMonth() - ACTIVITY_MONTHS);
+  const rows = (await sql`
+    SELECT investment_transaction_id, account_id, security_id, ticker, name, security_type, date, type, subtype, amount, quantity, price
+    FROM investment_transactions WHERE date >= ${dayKey(since)} ORDER BY date DESC, investment_transaction_id
+  `) as {
+    investment_transaction_id: string; account_id: string; security_id: string | null; ticker: string | null; name: string;
+    security_type: string | null; date: string; type: string | null; subtype: string | null; amount: number;
+    quantity: number | null; price: number | null;
+  }[];
+  return rows.map(r => ({
+    id: r.investment_transaction_id,
+    account_id: r.account_id,
+    security_id: r.security_id,
+    ticker: r.ticker,
+    name: r.name,
+    security_type: r.security_type,
+    date: r.date,
+    kind: classifyInvestmentTxn(r.type, r.subtype, Number(r.amount)),
+    amount: Number(r.amount),
+    quantity: r.quantity == null ? null : Number(r.quantity),
+    price: r.price == null ? null : Number(r.price),
+  }));
 }

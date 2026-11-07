@@ -129,7 +129,7 @@ function Dashboard() {
     const month = monthKey(-1);
     const { start, end } = monthBounds(month);
     if (!data.transactions.some(t => t.date >= start && t.date <= end)) return null;
-    return buildRecap(month, data.transactions, txnRules, recurring, data.history ?? []);
+    return buildRecap(month, data.transactions, txnRules, recurring, data.history ?? [], data.investmentTransactions ?? []);
   }, [data, txnRules, recurring]);
 
   // Optimistic: apply immediately, then save so other devices (and the AI) use the same settings

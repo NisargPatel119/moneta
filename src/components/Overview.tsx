@@ -104,7 +104,7 @@ export function Overview({ data, rules, recurring, goTo, onOpenRecurring, onSele
         <NetWorthChart
           history={data.history ?? []}
           current={data.netWorth}
-          explain={fromDay => netWorthChange(data.history ?? [], fromDay, dayKey(new Date()), data.transactions, rules)}
+          explain={fromDay => netWorthChange(data.history ?? [], fromDay, dayKey(new Date()), data.transactions, rules, data.investmentTransactions ?? [])}
           onBucket={openBucket}
         />
 

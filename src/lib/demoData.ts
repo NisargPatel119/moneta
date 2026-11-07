@@ -2,7 +2,7 @@ import type { FinancialData, HoldingRow } from './plaidData';
 import { DEFAULT_TRANSFER_RULES } from './transfers';
 import { DEFAULT_PLAN, type LifeEvent } from './forecast';
 import {
-  dayKey, pointFromBuckets, projectAssetValue, type Connection, type ManualAsset, type NetWorthPoint, type SecurityPoint, type Txn,
+  dayKey, pointFromBuckets, projectAssetValue, type Connection, type InvestmentTxn, type ManualAsset, type NetWorthPoint, type SecurityPoint, type Txn,
 } from './finance';
 import { buildInvestmentHistory } from './investmentStore';
 
@@ -128,6 +128,7 @@ export function getDemoData(): FinancialData {
       demoHoldingSnapshots(today, holdings).map(r => ({ date: r.date, account_id: r.account_id, type: r.type, value: r.value })),
       [],
     ),
+    investmentTransactions: demoInvestmentTransactions(today, holdings),
     // The demo household is in their mid-thirties
     settings: { transferRules: DEFAULT_TRANSFER_RULES, dismissedRecurring: [], forecastPlan: { ...DEFAULT_PLAN, birthYear: today.getFullYear() - 35, events: demoLifeEvents() } },
     rules: [],
@@ -266,6 +267,54 @@ function buildHistory(today: Date, end: NetWorthPoint['byBucket']): NetWorthPoin
     points.push(pointFromBuckets(dayKey(d), { cash, investments, property, credit, loans }));
   }
   return points;
+}
+
+// Two years of brokerage activity: steady paycheck contributions that buy into each account's fund,
+// quarterly (and for the bond fund, monthly) dividends, a quarterly 401(k) fee and a couple of sales
+function demoInvestmentTransactions(today: Date, holdings: HoldingRow[]): InvestmentTxn[] {
+  const todayKey = dayKey(today);
+  const rows: InvestmentTxn[] = [];
+  const find = (ticker: string | null, name?: string) => holdings.find(h => (ticker ? h.ticker === ticker : h.name === name))!;
+  const add = (date: Date, partial: Omit<InvestmentTxn, 'id' | 'date'>) => {
+    const day = dayKey(date);
+    if (day <= todayKey) rows.push({ ...partial, id: `demo-itx-${rows.length}`, date: day });
+  };
+  const round = (n: number) => Math.round(n * 100) / 100;
+
+  // [account, day of month, amount, security bought with it]
+  const contributions: [string, number, number, HoldingRow][] = [
+    ['k401', 1, 900, find(null, 'S&P 500 Index Fund')],
+    ['k401', 15, 900, find(null, 'S&P 500 Index Fund')],
+    ['roth', 5, 500, find('VOO')],
+    ['brk', 10, 400, find('VTI')],
+  ];
+  // [ticker, how often (months), dividend per share]
+  const dividends: [string, number, number][] = [['VTI', 3, 0.85], ['VXUS', 3, 0.6], ['VOO', 3, 1.75], ['BND', 1, 0.25], ['AAPL', 3, 0.25], ['MSFT', 3, 0.83]];
+
+  for (let back = 23; back >= 0; back--) {
+    const y = today.getFullYear();
+    const m = today.getMonth() - back;
+    for (const [account, dom, amount, sec] of contributions) {
+      const date = new Date(y, m, dom);
+      // Bought at a slightly lower price the further back it was
+      const price = round(sec.price * (1 - 0.006 * back));
+      add(date, { account_id: account, security_id: null, ticker: null, name: 'Payroll contribution', security_type: null, kind: 'contribution', amount: -amount, quantity: null, price: null });
+      add(date, { account_id: account, security_id: sec.security_id, ticker: sec.ticker, name: sec.name, security_type: sec.type, kind: 'buy', amount, quantity: round(amount / price * 1000) / 1000, price });
+    }
+    for (const [ticker, every, perShare] of dividends) {
+      if ((((m % every) + every) % every) !== 2 % every) continue;
+      const sec = find(ticker);
+      add(new Date(y, m, 22), { account_id: sec.account_id, security_id: sec.security_id, ticker, name: sec.name, security_type: sec.type, kind: 'dividend', amount: -round(sec.quantity * perShare * (1 - 0.01 * back / 3)), quantity: null, price: null });
+    }
+    if ((((m % 3) + 3) % 3) === 0) {
+      add(new Date(y, m, 28), { account_id: 'k401', security_id: null, ticker: null, name: 'Plan administration fee', security_type: null, kind: 'fee', amount: 12.5, quantity: null, price: null });
+    }
+  }
+  const nvda = find('NVDA');
+  for (const back of [5, 14]) {
+    add(new Date(today.getFullYear(), today.getMonth() - back, 12), { account_id: nvda.account_id, security_id: nvda.security_id, ticker: 'NVDA', name: nvda.name, security_type: 'equity', kind: 'sell', amount: -round(4 * nvda.price * 0.9), quantity: -4, price: round(nvda.price * 0.9) });
+  }
+  return rows.sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
 }
 
 type DemoSnapshot = SecurityPoint & { account_id: string; security_id: string; type: string };
