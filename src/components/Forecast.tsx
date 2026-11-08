@@ -1,14 +1,37 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pencil, Plus, Telescope, Trash2, TriangleAlert } from 'lucide-react';
-import { Area, AreaChart, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, Line, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { type DashboardData, formatCompact, formatMoney } from '@/lib/finance';
 import type { TxnRules } from '@/lib/transfers';
 import { DEFAULT_PLAN, EVENT_META, MAX_EVENTS, currentAgeOf, inTodaysDollars, newEvent, sanitizePlan, type EventType, type ForecastPlan, type ForecastPoint, type LifeEvent } from '@/lib/forecast';
-import { forecastFor } from '@/lib/forecastInputs';
+import { forecastFor, startingPoint } from '@/lib/forecastInputs';
+import { SIM_RUNS, simulateRuns, successBand, summarizeRuns, type SimRun, type SimSummary } from '@/lib/forecastSim';
 import { Card, Money, SectionTitle, Sheet, cn, usePref, usePrivacy } from './ui';
 
 const LINE = 'var(--accent)';
+
+// Runs the simulations in small chunks so the page stays responsive, and again whenever the plan or
+// the accounts change. null while it's working.
+function useSimulation(data: DashboardData, result: ReturnType<typeof forecastFor> | null, plan: ForecastPlan) {
+  const [done, setDone] = useState<{ key: string; summary: SimSummary } | null>(null);
+  const start = useMemo(() => (result ? startingPoint(data, plan) : null), [data, result, plan]);
+  const key = useMemo(() => JSON.stringify([plan, start, result?.baseline]), [plan, start, result]);
+  useEffect(() => {
+    if (!result || !start) return;
+    let cancelled = false;
+    const runs: SimRun[] = [];
+    const step = () => {
+      if (cancelled) return;
+      runs.push(...simulateRuns(plan, start, result.baseline, runs.length, Math.min(SIM_RUNS, runs.length + 100)));
+      if (runs.length < SIM_RUNS) setTimeout(step, 0);
+      else setDone({ key, summary: summarizeRuns(runs, result.currentAge) });
+    };
+    const timer = setTimeout(step, 0);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [key, plan, start, result]);
+  return done?.key === key ? done.summary : null;
+}
 
 export function Forecast({ data, rules, onSavePlan }: {
   data: DashboardData;
@@ -24,6 +47,7 @@ export function Forecast({ data, rules, onSavePlan }: {
   const { hidden } = usePrivacy();
 
   const result = useMemo(() => forecastFor(data, rules, plan), [data, rules, plan]);
+  const sim = useSimulation(data, plan.birthYear == null ? null : result, plan);
 
   if (plan.birthYear == null) {
     return <ForecastSetup plan={plan} onSave={onSavePlan} />;
@@ -32,7 +56,18 @@ export function Forecast({ data, rules, onSavePlan }: {
   // Show amounts in today's dollars unless the user asked for future dollars
   const adjust = (value: number, age: number) =>
     todays ? inTodaysDollars(value, age - result.currentAge, plan.inflation) : value;
-  const chartData = result.points.map(p => ({ ...p, value: adjust(p.netWorth, p.age) }));
+  const chartData = result.points.map((p, i) => {
+    const b = sim?.bands[i];
+    return {
+      ...p,
+      value: adjust(p.netWorth, p.age),
+      // The middle 80% of simulated outcomes, and the median
+      band: b ? [adjust(b.p10, p.age), adjust(b.p90, p.age)] : undefined,
+      median: b ? adjust(b.p50, p.age) : undefined,
+    };
+  });
+  const band = sim ? successBand(sim.successRate) : null;
+  const pct = sim ? Math.round(sim.successRate * 100) : 0;
   const atRetire = result.atRetirement;
   const retireAge = result.retireAge;
   const surplus = (plan.income ?? result.baseline.income) - (plan.spending ?? result.baseline.spending);
@@ -70,6 +105,24 @@ export function Forecast({ data, rules, onSavePlan }: {
         </Card>
       </div>
 
+      <Card className="p-4 sm:p-5">
+        <p className="eyebrow text-muted">Chance your money lasts</p>
+        {sim && band ? (
+          <>
+            <div className="flex items-baseline gap-3 mt-2 flex-wrap">
+              <span className={cn('font-display text-4xl tracking-tight leading-none', band.id === 'onTrack' ? 'text-positive' : 'text-warn')}>{pct}%</span>
+              <span className={cn('text-sm font-semibold', band.id === 'onTrack' ? 'text-positive' : 'text-warn')}>{band.label}</span>
+            </div>
+            <p className="text-[11px] text-faint mt-1.5 leading-relaxed">
+              In {sim.runs.toLocaleString('en-US')} simulated markets, cash and investments covered spending to age {plan.planToAge} in {pct}% of them.
+              {sim.medianRunsOutAt != null && <> When they ran short, it was typically around age {sim.medianRunsOutAt}.</>} {band.blurb}
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-muted mt-2">Running {SIM_RUNS.toLocaleString('en-US')} simulations…</p>
+        )}
+      </Card>
+
       <Card className="p-5 sm:p-6">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <SectionTitle>Projected net worth</SectionTitle>
@@ -97,7 +150,9 @@ export function Forecast({ data, rules, onSavePlan }: {
               {result.runsOutAt && (
                 <ReferenceLine x={result.runsOutAt} stroke="var(--warn)" strokeDasharray="4 4" label={{ value: 'Runs short', position: 'insideTopLeft', fill: 'var(--warn)', fontSize: 11 }} />
               )}
+              {sim && <Area type="monotone" dataKey="band" stroke="none" fill="var(--accent)" fillOpacity={0.12} activeDot={false} isAnimationActive={false} />}
               <Area type="monotone" dataKey="value" stroke={LINE} strokeWidth={2} fill="url(#fc-fill)" activeDot={{ r: 5, strokeWidth: 2, stroke: 'var(--surface)' }} />
+              {sim && <Line type="monotone" dataKey="median" stroke="var(--muted)" strokeWidth={1.5} strokeDasharray="5 4" dot={false} activeDot={false} isAnimationActive={false} />}
               {/* One dot per age that has a life event starting */}
               {chartData.filter(p => p.events.length > 0).map(p => (
                 <ReferenceDot key={p.age} x={p.age} y={p.value} r={4.5} fill="var(--surface)" stroke="var(--accent)" strokeWidth={2} ifOverflow="visible" />
@@ -106,7 +161,7 @@ export function Forecast({ data, rules, onSavePlan }: {
           </ResponsiveContainer>
         </div>
         <p className="text-xs text-faint mt-2">
-          Age on the bottom. {chartData.some(p => p.events.length > 0) && 'Dots mark life events. '}{todays ? "Amounts are in today's dollars, so they're comparable to what money buys now." : 'Amounts include inflation.'}
+          Age on the bottom. {sim && 'The shaded band is the middle 80% of simulated outcomes; the dashed line is the median. '}{chartData.some(p => p.events.length > 0) && 'Dots mark life events. '}{todays ? "Amounts are in today's dollars, so they're comparable to what money buys now." : 'Amounts include inflation.'}
         </p>
       </Card>
 
@@ -136,11 +191,12 @@ export function Forecast({ data, rules, onSavePlan }: {
           <Fact label="Investments grow" value={`${plan.growth.investments}%/yr`} />
           <Fact label="Cash grows" value={`${plan.growth.cash}%/yr`} />
           <Fact label="Inflation" value={`${plan.inflation}%/yr`} />
+          <Fact label="Market swings" value={`±${plan.volatility}%/yr`} hint="used by the simulations" />
         </dl>
         <p className="text-xs text-faint mt-4 leading-relaxed">
           A simple, directional projection: steady growth each year, income stops at retirement, and spending comes out of cash, then
-          investments. Life events are added on top, in today&apos;s dollars. It doesn&apos;t model taxes or market ups and downs yet.
-          It&apos;s not financial advice.
+          investments. Life events are added on top, in today&apos;s dollars. The line is a steady projection; the simulations add yearly ups and downs in
+          investment returns and inflation (seeded, so results stay put). It doesn&apos;t model taxes. It&apos;s not financial advice.
         </p>
       </Card>
 
@@ -185,6 +241,7 @@ export function Forecast({ data, rules, onSavePlan }: {
 export function ForecastCard({ data, rules, onOpen }: { data: DashboardData; rules: TxnRules; onOpen: () => void }) {
   const plan = data.settings?.forecastPlan ?? DEFAULT_PLAN;
   const result = useMemo(() => (plan.birthYear == null ? null : forecastFor(data, rules, plan)), [data, rules, plan]);
+  const sim = useSimulation(data, result, plan);
   return (
     <button onClick={onOpen} className="w-full text-left">
       <Card className="p-6 hover:bg-sunken/50 transition-colors">
@@ -195,7 +252,7 @@ export function ForecastCard({ data, rules, onOpen }: { data: DashboardData; rul
             <p className="text-ink-2 leading-relaxed">
               At {result.retireAge} you&apos;d have about{' '}
               <Money value={inTodaysDollars(result.atRetirement.netWorth, result.atRetirement.age - result.currentAge, plan.inflation)} whole className="font-semibold text-ink" />{' '}
-              in today&apos;s dollars, and your money {result.runsOutAt ? <span className="text-warn font-semibold">runs short at {result.runsOutAt}</span> : <>lasts past {plan.planToAge}</>}{plan.events.some(e => e.enabled) && <> (with {plan.events.filter(e => e.enabled).length} life event{plan.events.filter(e => e.enabled).length === 1 ? '' : 's'})</>}.
+              in today&apos;s dollars, and your money {result.runsOutAt ? <span className="text-warn font-semibold">runs short at {result.runsOutAt}</span> : <>lasts past {plan.planToAge}</>}{sim && <> ({Math.round(sim.successRate * 100)}% chance across simulated markets)</>}{plan.events.some(e => e.enabled) && <> (with {plan.events.filter(e => e.enabled).length} life event{plan.events.filter(e => e.enabled).length === 1 ? '' : 's'})</>}.
             </p>
           ) : (
             <p className="text-ink-2">See where your net worth is heading. Add your age to get started.</p>
@@ -250,6 +307,7 @@ function PlanEditor({ plan, baseline, onClose, onSave }: {
     savedShare: s(plan.savedShare),
     incomeGrowth: s(plan.incomeGrowth),
     inflation: s(plan.inflation),
+    volatility: s(plan.volatility),
     investments: s(plan.growth.investments),
     cash: s(plan.growth.cash),
     realEstate: s(plan.growth.realEstate),
@@ -269,6 +327,7 @@ function PlanEditor({ plan, baseline, onClose, onSave }: {
     savedShare: clean(f.savedShare),
     incomeGrowth: clean(f.incomeGrowth),
     inflation: clean(f.inflation),
+    volatility: clean(f.volatility),
     growth: {
       investments: clean(f.investments), cash: clean(f.cash), realEstate: clean(f.realEstate),
       vehicles: clean(f.vehicles), other: clean(f.other),
@@ -318,6 +377,10 @@ function PlanEditor({ plan, baseline, onClose, onSave }: {
             <NumberField label="Vehicles" suffix="%" value={f.vehicles} onChange={set('vehicles')} />
             <NumberField label="Other assets" suffix="%" value={f.other} onChange={set('other')} />
           </div>
+          <div className="grid grid-cols-3 gap-3 mt-3">
+            <NumberField label="Market swings" suffix="%" value={f.volatility} onChange={set('volatility')} />
+          </div>
+          <p className="text-[11px] text-faint mt-2">Market swings: how far investment returns typically stray from the average in a year (15% is about the long-run stock market). Used by the simulations.</p>
           <p className="text-[11px] text-faint mt-2">Assets you added by hand with their own yearly change keep that rate.</p>
         </div>
       </div>
@@ -403,7 +466,7 @@ function Milestones({ points, adjust, plan, retireAge }: { points: ForecastPoint
 
 function PointTooltip({ active, payload, adjust }: {
   active?: boolean;
-  payload?: { payload: ForecastPoint & { value: number } }[];
+  payload?: { payload: ForecastPoint & { value: number; band?: number[] } }[];
   adjust: (v: number, age: number) => number;
 }) {
   const { hidden } = usePrivacy();
@@ -418,6 +481,9 @@ function PointTooltip({ active, payload, adjust }: {
     <div className="rounded-xl border border-line bg-surface text-ink shadow-lg p-3 text-xs space-y-0.5">
       <p className="font-semibold text-sm mb-1">Age {p.age} · {p.year}</p>
       <div className="flex justify-between gap-6 font-semibold"><span>Net worth</span><span className="tabular-nums">{fmt(p.value)}</span></div>
+      {p.band && (
+        <div className="flex justify-between gap-6"><span className="text-muted">Likely range</span><span className="tabular-nums">{fmt(p.band[0])} – {fmt(p.band[1])}</span></div>
+      )}
       {row('Investments', p.investments)}
       {row('Cash', p.cash)}
       {p.property > 0 && row('Property', p.property)}

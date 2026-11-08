@@ -76,6 +76,8 @@ export type ForecastPlan = {
   /** Share of a yearly surplus that actually gets saved, 0–100 */
   savedShare: number;
   inflation: number;
+  /** How much investment returns swing from year to year in the simulations (standard deviation, percent) */
+  volatility: number;
   growth: GrowthRates;
   /** Home purchases, kids, windfalls and so on (see LifeEvent) */
   events: LifeEvent[];
@@ -90,6 +92,7 @@ export const DEFAULT_PLAN: ForecastPlan = {
   incomeGrowth: 3,
   savedShare: 100,
   inflation: 3,
+  volatility: 15,
   // Monarch's published defaults; Origin's are similar
   growth: { cash: 3, investments: 7, realEstate: 3, vehicles: -15, other: 0 },
   events: [],
@@ -155,6 +158,7 @@ export function sanitizePlan(input: unknown): ForecastPlan {
     incomeGrowth: num(raw.incomeGrowth, DEFAULT_PLAN.incomeGrowth, -10, 20),
     savedShare: num(raw.savedShare, DEFAULT_PLAN.savedShare, 0, 100),
     inflation: num(raw.inflation, DEFAULT_PLAN.inflation, 0, 15),
+    volatility: num(raw.volatility, DEFAULT_PLAN.volatility, 0, 40),
     growth: {
       cash: num(g.cash, DEFAULT_PLAN.growth.cash, -20, 20),
       investments: num(g.investments, DEFAULT_PLAN.growth.investments, -20, 30),
@@ -225,7 +229,12 @@ export function mortgagePayment(principal: number, ratePct: number, years: numbe
 // like spending. Event money is never trimmed by the saved share: a windfall goes in whole (split like
 // savings), costs are drawn from cash, then investments. A home purchase takes the down payment from
 // savings, adds the home as property and the rest as a mortgage that's paid off over its term.
-export function projectNetWorth(plan: ForecastPlan, start: StartingPoint, baseline: { income: number; spending: number }, today = new Date()): ForecastResult {
+//
+// `path` swaps the steady assumptions for one year-by-year sequence (index 0 = the first year): investment
+// returns and inflation in percent. The simulations use it; without it the projection is the steady one.
+export type ReturnPath = { returns: number[]; inflation: number[] };
+
+export function projectNetWorth(plan: ForecastPlan, start: StartingPoint, baseline: { income: number; spending: number }, today = new Date(), path?: ReturnPath): ForecastResult {
   const birthYear = plan.birthYear ?? today.getFullYear() - 40;
   const currentAge = currentAgeOf(birthYear, today);
   const year0 = today.getFullYear();
@@ -247,6 +256,8 @@ export function projectNetWorth(plan: ForecastPlan, start: StartingPoint, baseli
   let income = plan.income ?? baseline.income;
   let spending = plan.spending ?? baseline.spending;
   let runsOutAt: number | null = null;
+  // Prices today = 1; grows with each year's inflation
+  let priceLevel = 1;
 
   const point = (age: number, yearIncome: number, yearSpending: number, labels: string[]): ForecastPoint => {
     const propertyTotal = property.reduce((s, p) => s + p.value, 0);
@@ -270,14 +281,17 @@ export function projectNetWorth(plan: ForecastPlan, start: StartingPoint, baseli
   for (let age = currentAge + 1; age <= plan.planToAge; age++) {
     const working = age <= retireAge;
 
+    const yearIndex = age - currentAge - 1;
+    const inflationPct = path?.inflation[yearIndex] ?? plan.inflation;
+
     // Growth on what was there at the start of the year
     cash *= 1 + rate(plan.growth.cash);
-    investments *= 1 + rate(plan.growth.investments);
+    investments *= 1 + rate(path?.returns[yearIndex] ?? plan.growth.investments);
     property = property.map(p => ({ ...p, value: Math.max(0, p.value * (1 + rate(p.rate))) }));
     debts = Math.max(0, debts + start.debtTrend);
 
     // Life events this year. Amounts are in today's dollars, inflated like spending (year one = today).
-    const inflate = Math.pow(1 + rate(plan.inflation), age - currentAge - 1);
+    const inflate = priceLevel;
     const labels: string[] = [];
     let eventIn = 0;
     let eventOut = 0;
@@ -355,7 +369,8 @@ export function projectNetWorth(plan: ForecastPlan, start: StartingPoint, baseli
 
     // Next year's amounts (a raise still happens during a career break)
     if (working) income *= 1 + rate(plan.incomeGrowth);
-    spending *= 1 + rate(plan.inflation);
+    spending *= 1 + rate(inflationPct);
+    priceLevel *= 1 + rate(inflationPct);
   }
 
   return {
