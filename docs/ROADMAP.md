@@ -44,7 +44,7 @@ One item per night, in this order. The date is the morning it should be live. �
 | 3 | F2 | ✅ Nov 6 | Forecast: life events | F1 |
 | 4 | I2 | ✅ Nov 7 | Investments: activity, dividends, contributions vs. growth | I1 |
 | 5 | F3 | ✅ Nov 8 | Forecast: simulations, success rate, range bands | F2 |
-| 6 | F4 | Nov 10 | Forecast: saved scenarios and side-by-side compare | F3 |
+| 6 | F4 | ✅ Nov 9 | Forecast: saved scenarios and side-by-side compare | F3 |
 | 7 | B1 | Nov 11 | Budgets | — |
 | 8 | B2 | Nov 12 | Goals (feed the forecast) | B1, F1 |
 | 9 | I3 | Nov 13 | Target allocation and rebalancing check | I1 |

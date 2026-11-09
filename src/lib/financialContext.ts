@@ -5,6 +5,7 @@ import { FREQUENCY_LABELS, detectRecurring } from './recurring';
 import { inTodaysDollars } from './forecast';
 import { forecastFor, startingPoint } from './forecastInputs';
 import { simulate, successBand } from './forecastSim';
+import { describeChanges } from './forecastScenarios';
 import type { DashboardData } from './finance';
 
 const money = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -59,6 +60,8 @@ export function buildFinancialContext(data: FinancialData) {
     if (events.length > 0) lines.push(`Life events in the plan (today's dollars): ${events.map(e => `${e.label} at age ${e.age}${e.amount ? ` (${money(e.amount)}${e.type === 'socialSecurity' ? '/month' : e.years > 1 && e.type !== 'home' ? '/yr' : ''})` : ''}`).join('; ')}.`);
     const sim = simulate(plan, startingPoint(data as unknown as DashboardData, plan), f.baseline, new Date(), 500);
     lines.push(`Simulation (${sim.runs} random markets, investment returns vary by about ${plan.volatility}% a year): money lasts to ${plan.planToAge} in ${Math.round(sim.successRate * 100)}% of runs (${successBand(sim.successRate).label.toLowerCase()}).`);
+    const scenarios = data.settings.forecastScenarios ?? [];
+    if (scenarios.length > 0) lines.push(`Saved what-if scenarios: ${scenarios.map(s => `${s.name} (${describeChanges(plan, s.plan, f.baseline).join(', ') || 'same as the plan'})`).join('; ')}.`);
     lines.push(f.runsOutAt ? `Cash and investments run short at age ${f.runsOutAt}.` : `Cash and investments last past age ${plan.planToAge}.`);
   }
   const counted = TRANSFER_TYPES.filter(t => data.settings.transferRules[t].countAsSpending).map(t => TRANSFER_META[t].label);
