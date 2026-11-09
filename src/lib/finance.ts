@@ -1,6 +1,7 @@
 import type { AccountBase } from 'plaid';
 import type { HoldingRow } from './plaidData';
 import type { ForecastPlan } from './forecast';
+import type { ForecastScenario } from './forecastScenarios';
 import { TRANSFER_META, type TransferRules, type TransferType, type TxnRules } from './transfers';
 import {
   ArrowLeftRight, Banknote, Bitcoin, Briefcase, Car, Coffee, Film, Gem, HeartPulse, Home, Hammer,
@@ -163,7 +164,7 @@ export type DashboardData = {
   investmentHistory: InvestmentHistory;
   /** Trades, dividends, deposits and fees from the last 24 months */
   investmentTransactions: InvestmentTxn[];
-  settings: { transferRules: TransferRules; dismissedRecurring: string[]; forecastPlan: ForecastPlan };
+  settings: { transferRules: TransferRules; dismissedRecurring: string[]; forecastPlan: ForecastPlan; forecastScenarios: ForecastScenario[] };
   rules: CategoryRule[];
   history: NetWorthPoint[];
   fetchedAt?: string;

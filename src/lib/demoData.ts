@@ -1,6 +1,7 @@
 import type { FinancialData, HoldingRow } from './plaidData';
 import { DEFAULT_TRANSFER_RULES } from './transfers';
-import { DEFAULT_PLAN, type LifeEvent } from './forecast';
+import { DEFAULT_PLAN, type ForecastPlan, type LifeEvent } from './forecast';
+import { withRetireAge, type ForecastScenario } from './forecastScenarios';
 import {
   dayKey, pointFromBuckets, projectAssetValue, type Connection, type InvestmentTxn, type ManualAsset, type NetWorthPoint, type SecurityPoint, type Txn,
 } from './finance';
@@ -130,7 +131,7 @@ export function getDemoData(): FinancialData {
     ),
     investmentTransactions: demoInvestmentTransactions(today, holdings),
     // The demo household is in their mid-thirties
-    settings: { transferRules: DEFAULT_TRANSFER_RULES, dismissedRecurring: [], forecastPlan: { ...DEFAULT_PLAN, birthYear: today.getFullYear() - 35, events: demoLifeEvents() } },
+    settings: { transferRules: DEFAULT_TRANSFER_RULES, dismissedRecurring: [], forecastPlan: demoPlan(today), forecastScenarios: demoScenarios(today) },
     rules: [],
     history: buildHistory(today, buckets),
     fetchedAt: today.toISOString(),
@@ -381,5 +382,19 @@ function demoLifeEvents(): LifeEvent[] {
     e('demo-home', 'home', 'Buy a bigger home', 40, { amount: 520_000, downPayment: 104_000, years: 30, mortgageRate: 6.25, enabled: false }),
     e('demo-inherit', 'windfall', 'Inheritance', 52, { amount: 60_000 }),
     e('demo-ss', 'socialSecurity', 'Social Security', 67, { amount: 2_400 }),
+  ];
+}
+
+function demoPlan(today: Date): ForecastPlan {
+  return { ...DEFAULT_PLAN, birthYear: today.getFullYear() - 35, events: demoLifeEvents() };
+}
+
+// Two saved scenarios and a cautious-markets one, so the compare chart has something to show
+function demoScenarios(today: Date): ForecastScenario[] {
+  const base = demoPlan(today);
+  return [
+    { id: 'demo-retire-58', name: 'Retire at 58', plan: withRetireAge(base, 58) },
+    { id: 'demo-home-38', name: 'Buy a home at 38', plan: { ...base, events: base.events.map(e => (e.id === 'demo-home' ? { ...e, age: 38, enabled: true } : e)) } },
+    { id: 'demo-slump', name: 'Slower markets', plan: { ...base, growth: { ...base.growth, investments: 5 } } },
   ];
 }

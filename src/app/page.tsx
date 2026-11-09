@@ -484,7 +484,7 @@ function Dashboard() {
                 </>
               )}
               {tab === 'forecast' && (
-                <Forecast data={data} rules={txnRules} onSavePlan={forecastPlan => saveSettings({ forecastPlan })} />
+                <Forecast data={data} rules={txnRules} onSavePlan={forecastPlan => saveSettings({ forecastPlan })} onSaveScenarios={forecastScenarios => saveSettings({ forecastScenarios })} />
               )}
               {tab === 'investments' && <Investments data={data} onLinkBrokerage={() => plaid.start('brokerage')} />}
               {tab === 'accounts' && (

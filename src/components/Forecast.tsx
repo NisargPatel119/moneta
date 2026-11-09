@@ -6,7 +6,9 @@ import { type DashboardData, formatCompact, formatMoney } from '@/lib/finance';
 import type { TxnRules } from '@/lib/transfers';
 import { DEFAULT_PLAN, EVENT_META, MAX_EVENTS, currentAgeOf, inTodaysDollars, newEvent, sanitizePlan, type EventType, type ForecastPlan, type ForecastPoint, type LifeEvent } from '@/lib/forecast';
 import { forecastFor, startingPoint } from '@/lib/forecastInputs';
+import type { ForecastScenario } from '@/lib/forecastScenarios';
 import { SIM_RUNS, simulateRuns, successBand, summarizeRuns, type SimRun, type SimSummary } from '@/lib/forecastSim';
+import { ScenariosPanel } from './ForecastScenarios';
 import { Card, Money, SectionTitle, Sheet, cn, usePref, usePrivacy } from './ui';
 
 const LINE = 'var(--accent)';
@@ -33,10 +35,11 @@ function useSimulation(data: DashboardData, result: ReturnType<typeof forecastFo
   return done?.key === key ? done.summary : null;
 }
 
-export function Forecast({ data, rules, onSavePlan }: {
+export function Forecast({ data, rules, onSavePlan, onSaveScenarios }: {
   data: DashboardData;
   rules: TxnRules;
   onSavePlan: (plan: ForecastPlan) => void;
+  onSaveScenarios: (scenarios: ForecastScenario[]) => void;
 }) {
   const plan = data.settings?.forecastPlan ?? DEFAULT_PLAN;
   const [editing, setEditing] = useState(false);
@@ -206,6 +209,16 @@ export function Forecast({ data, rules, onSavePlan }: {
         onAdd={type => setEventEdit({ ...newEvent(type, result.currentAge, retireAge), id: '' })}
         onEdit={e => setEventEdit(e)}
         onToggle={id => onSavePlan({ ...plan, events: plan.events.map(e => (e.id === id ? { ...e, enabled: !e.enabled } : e)) })}
+      />
+
+      <ScenariosPanel
+        data={data}
+        plan={plan}
+        baseline={result.baseline}
+        currentAge={result.currentAge}
+        scenarios={data.settings?.forecastScenarios ?? []}
+        todays={todays}
+        onSave={onSaveScenarios}
       />
 
       <Milestones points={result.points} adjust={adjust} plan={plan} retireAge={retireAge} />
@@ -388,7 +401,7 @@ function PlanEditor({ plan, baseline, onClose, onSave }: {
   );
 }
 
-function NumberField({ label, value, onChange, prefix, suffix, placeholder, hint }: {
+export function NumberField({ label, value, onChange, prefix, suffix, placeholder, hint }: {
   label: string; value: string; onChange: (v: string) => void;
   prefix?: string; suffix?: string; placeholder?: string; hint?: string;
 }) {
@@ -576,8 +589,9 @@ function LifeEvents({ events, currentAge, onAdd, onEdit, onToggle }: {
   );
 }
 
-function EventEditor({ event, currentAge, onClose, onSave, onDelete }: {
+export function EventEditor({ event, currentAge, onClose, onSave, onDelete, z }: {
   event: LifeEvent;
+  z?: string;
   currentAge: number;
   onClose: () => void;
   onSave: (e: LifeEvent) => void;
@@ -619,6 +633,7 @@ function EventEditor({ event, currentAge, onClose, onSave, onDelete }: {
   return (
     <Sheet
       open
+      z={z}
       onClose={onClose}
       title={event.id ? 'Edit event' : `Add: ${EVENT_META[t].label}`}
       subtitle={EVENT_META[t].hint}
